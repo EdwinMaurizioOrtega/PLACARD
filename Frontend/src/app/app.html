@@ -1,0 +1,30 @@
+@if (auth.isLoggedIn()) {
+  <header class="topbar">
+    <a class="brand" routerLink="/descubrir">
+      <span class="brand-mark">P</span>
+      <span class="brand-text">PLACARD</span>
+    </a>
+
+    <nav class="links">
+      <a routerLink="/descubrir" routerLinkActive="active">Descubrir</a>
+      <a routerLink="/explorar" routerLinkActive="active">Explorar</a>
+      <a routerLink="/closet" routerLinkActive="active">Mi clóset</a>
+      <a routerLink="/matches" routerLinkActive="active">Matches</a>
+      @if (auth.isAdmin()) {
+        <a routerLink="/admin" routerLinkActive="active">Admin</a>
+      }
+    </nav>
+
+    <div class="user">
+      <a routerLink="/perfil" class="user-link">
+        <img class="avatar" [src]="auth.user()?.avatar_url || fallbackAvatar" alt="" />
+        <span class="user-name">{{ auth.user()?.username }}</span>
+      </a>
+      <button type="button" class="btn btn-ghost btn-sm" (click)="auth.logout()">Salir</button>
+    </div>
+  </header>
+}
+
+<main>
+  <router-outlet />
+</main>
