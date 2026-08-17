@@ -2,6 +2,7 @@ pub mod auth_routes;
 pub mod categories;
 pub mod garments;
 pub mod matches;
+pub mod reports;
 pub mod reviews;
 pub mod stats;
 pub mod swipes;
@@ -22,6 +23,8 @@ pub fn api_router() -> Router<AppState> {
         .nest("/matches", matches::router())
         .nest("/messages", matches::messages_router())
         .nest("/reviews", reviews::router())
+        .nest("/reports", reports::router())
+        .nest("/blocks", reports::blocks_router())
         .nest("/stats", stats::router())
 }
 

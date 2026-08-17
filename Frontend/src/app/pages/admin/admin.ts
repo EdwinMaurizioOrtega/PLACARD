@@ -1,13 +1,14 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
+import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 
 import { ApiService } from '../../core/api.service';
-import { Category, Stats, User } from '../../core/models';
+import { Category, REPORT_REASONS, Report, Stats, User } from '../../core/models';
 
 @Component({
   selector: 'app-admin',
-  imports: [FormsModule, RouterLink],
+  imports: [DatePipe, FormsModule, RouterLink],
   template: `
     <div class="page">
       <div class="page-head">
@@ -41,6 +42,10 @@ import { Category, Stats, User } from '../../core/models';
             <span class="value">{{ data.overview.total_messages }}</span
             ><span class="muted">Mensajes</span>
           </div>
+          <div class="card metric" [class.alerted]="data.overview.pending_reports > 0">
+            <span class="value">{{ data.overview.pending_reports }}</span
+            ><span class="muted">Reportes pendientes</span>
+          </div>
         </div>
 
         <section class="card">
@@ -56,6 +61,76 @@ import { Category, Stats, User } from '../../core/models';
           }
         </section>
       }
+
+      <section class="card">
+        <div class="row between">
+          <h2>Cola de moderación</h2>
+          <select class="filter" [(ngModel)]="reportStatus" (ngModelChange)="loadReports()">
+            <option value="pendiente">Pendientes</option>
+            <option value="revisado">Revisados</option>
+            <option value="descartado">Descartados</option>
+            <option value="">Todos</option>
+          </select>
+        </div>
+
+        @if (reports().length === 0) {
+          <p class="muted">No hay reportes en esta bandeja.</p>
+        } @else {
+          <div class="stack">
+            @for (report of reports(); track report.id) {
+              <div class="report">
+                <div class="row between">
+                  <strong>{{ reasonLabel(report.reason) }}</strong>
+                  <small class="muted">{{ report.created_at | date: 'dd/MM/yyyy HH:mm' }}</small>
+                </div>
+                <p class="muted target">
+                  Reportado por &#64;{{ report.reporter_username }}
+                  @if (report.target_username) {
+                    · usuario &#64;{{ report.target_username }}
+                  }
+                  @if (report.target_garment_title) {
+                    · prenda “{{ report.target_garment_title }}”
+                  }
+                </p>
+                @if (report.details) {
+                  <p class="details">{{ report.details }}</p>
+                }
+                <div class="row">
+                  <span class="chip" [class.chip-warn]="report.status === 'pendiente'">
+                    {{ report.status }}
+                  </span>
+                  @if (report.target_garment_id) {
+                    <button
+                      class="btn btn-danger btn-sm"
+                      (click)="hideGarment(report.target_garment_id!)"
+                    >
+                      Ocultar prenda
+                    </button>
+                  }
+                  @if (report.target_user_id) {
+                    <button
+                      class="btn btn-danger btn-sm"
+                      (click)="suspend(report.target_user_id!)"
+                    >
+                      Suspender cuenta
+                    </button>
+                  }
+                  @if (report.status === 'pendiente') {
+                    <button class="btn btn-accent btn-sm" (click)="resolve(report, 'revisado')">
+                      Marcar revisado
+                    </button>
+                    <button class="btn btn-ghost btn-sm" (click)="resolve(report, 'descartado')">
+                      Descartar
+                    </button>
+                  } @else if (report.resolution) {
+                    <small class="muted">{{ report.resolution }}</small>
+                  }
+                </div>
+              </div>
+            }
+          </div>
+        }
+      </section>
 
       <div class="cols">
         <section class="card">
@@ -109,6 +184,15 @@ import { Category, Stats, User } from '../../core/models';
                 @if (user.role === 'admin') {
                   <span class="chip">admin</span>
                 }
+                @if (!user.is_active) {
+                  <span class="chip chip-warn">suspendido</span>
+                }
+                <button
+                  class="btn btn-ghost btn-sm"
+                  (click)="toggleActive(user); $event.preventDefault(); $event.stopPropagation()"
+                >
+                  {{ user.is_active ? 'Suspender' : 'Reactivar' }}
+                </button>
               </a>
             }
           </div>
@@ -134,6 +218,37 @@ import { Category, Stats, User } from '../../core/models';
       font-size: 1.7rem;
       font-weight: 800;
       color: var(--brand);
+    }
+
+    .metric.alerted {
+      border-color: var(--danger);
+    }
+
+    .row.between {
+      justify-content: space-between;
+      width: 100%;
+    }
+
+    .filter {
+      width: auto;
+      padding: 0.35rem 0.6rem;
+      font-size: 0.85rem;
+    }
+
+    .report {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 0.85rem;
+    }
+
+    .report .target {
+      margin: 0.2rem 0;
+      font-size: 0.85rem;
+    }
+
+    .report .details {
+      margin: 0.2rem 0 0.6rem;
+      font-size: 0.9rem;
     }
 
     .card {
@@ -209,16 +324,55 @@ export class AdminPage implements OnInit {
   readonly stats = signal<Stats | null>(null);
   readonly categories = signal<Category[]>([]);
   readonly users = signal<User[]>([]);
+  readonly reports = signal<Report[]>([]);
   readonly editingId = signal<string | null>(null);
   readonly error = signal('');
 
   categoryForm = { name: '', icon: '' };
   userQuery = '';
+  reportStatus = 'pendiente';
 
   ngOnInit() {
-    this.api.stats().subscribe((data) => this.stats.set(data));
+    this.loadStats();
     this.loadCategories();
     this.loadUsers();
+    this.loadReports();
+  }
+
+  private loadStats() {
+    this.api.stats().subscribe((data) => this.stats.set(data));
+  }
+
+  loadReports() {
+    this.api.listReports(this.reportStatus).subscribe((items) => this.reports.set(items));
+  }
+
+  reasonLabel(reason: string): string {
+    return REPORT_REASONS.find((r) => r.value === reason)?.label ?? reason;
+  }
+
+  resolve(report: Report, status: string) {
+    this.api.resolveReport(report.id, status).subscribe(() => {
+      this.loadReports();
+      this.loadStats();
+    });
+  }
+
+  hideGarment(garmentId: string) {
+    if (!confirm('¿Ocultar esta prenda del catálogo?')) return;
+    this.api.moderateGarment(garmentId, true).subscribe({
+      next: () => this.loadStats(),
+      error: (err) => this.error.set(err?.error?.error ?? 'No se pudo ocultar la prenda'),
+    });
+  }
+
+  suspend(userId: string) {
+    if (!confirm('¿Suspender esta cuenta? No podrá iniciar sesión.')) return;
+    this.api.setUserActive(userId, false).subscribe(() => this.loadUsers());
+  }
+
+  toggleActive(user: User) {
+    this.api.setUserActive(user.id, !user.is_active).subscribe(() => this.loadUsers());
   }
 
   percent(total: number, rows: { total: number }[]): number {

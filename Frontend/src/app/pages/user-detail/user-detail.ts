@@ -3,10 +3,11 @@ import { CurrencyPipe, DatePipe, DecimalPipe } from '@angular/common';
 
 import { ApiService } from '../../core/api.service';
 import { Garment, Review, User } from '../../core/models';
+import { ReportDialog } from '../../shared/report-dialog';
 
 @Component({
   selector: 'app-user-detail',
-  imports: [CurrencyPipe, DatePipe, DecimalPipe],
+  imports: [CurrencyPipe, DatePipe, DecimalPipe, ReportDialog],
   template: `
     <div class="page narrow">
       @if (user(); as profile) {
@@ -25,6 +26,19 @@ import { Garment, Review, User } from '../../core/models';
               }
               @for (style of profile.preferred_styles; track style) {
                 <span class="chip">{{ style }}</span>
+              }
+            </div>
+            <div class="row actions">
+              <button class="btn btn-ghost btn-sm" (click)="reporting.set(true)">
+                ⚑ Reportar usuario
+              </button>
+              @if (blocked()) {
+                <button class="btn btn-ghost btn-sm" (click)="unblock(profile)">
+                  Desbloquear
+                </button>
+                <span class="chip chip-warn">Usuario bloqueado</span>
+              } @else {
+                <button class="btn btn-danger btn-sm" (click)="block(profile)">Bloquear</button>
               }
             </div>
           </div>
@@ -71,6 +85,14 @@ import { Garment, Review, User } from '../../core/models';
       } @else {
         <div class="spinner"></div>
       }
+
+      @if (reporting()) {
+        <app-report-dialog
+          [userId]="id()"
+          [label]="'a ' + (user()?.full_name ?? 'este usuario')"
+          (closed)="reporting.set(false)"
+        />
+      }
     </div>
   `,
   styles: `
@@ -88,6 +110,10 @@ import { Garment, Review, User } from '../../core/models';
     .avatar.big {
       width: 96px;
       height: 96px;
+    }
+
+    .actions {
+      margin-top: 0.8rem;
     }
 
     h2 {
@@ -141,6 +167,8 @@ export class UserDetailPage implements OnInit {
   readonly user = signal<User | null>(null);
   readonly garments = signal<Garment[]>([]);
   readonly reviews = signal<Review[]>([]);
+  readonly reporting = signal(false);
+  readonly blocked = signal(false);
 
   ngOnInit() {
     this.api.getUser(this.id()).subscribe((user) => this.user.set(user));
@@ -148,5 +176,19 @@ export class UserDetailPage implements OnInit {
       .listGarments({ owner_id: this.id(), status: 'disponible', per_page: 24 })
       .subscribe((res) => this.garments.set(res.items));
     this.api.reviewsForUser(this.id()).subscribe((items) => this.reviews.set(items));
+    this.api
+      .listBlocks()
+      .subscribe((items) => this.blocked.set(items.some((b) => b.blocked_id === this.id())));
+  }
+
+  block(profile: User) {
+    if (!confirm(`¿Bloquear a ${profile.full_name}? Se eliminará el match y dejarán de verse.`)) {
+      return;
+    }
+    this.api.blockUser(profile.id).subscribe(() => this.blocked.set(true));
+  }
+
+  unblock(profile: User) {
+    this.api.unblockUser(profile.id).subscribe(() => this.blocked.set(false));
   }
 }

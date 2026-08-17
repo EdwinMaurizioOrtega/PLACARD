@@ -13,7 +13,7 @@ use crate::{
     error::{AppError, AppResult},
     models::{
         FeedQuery, Garment, GarmentImage, GarmentInput, GarmentQuery, GarmentRow, GarmentUpdate,
-        ImageInput, Page, GARMENT_COLUMNS,
+        HiddenInput, ImageInput, Page, GARMENT_COLUMNS,
     },
     state::AppState,
 };
@@ -28,6 +28,7 @@ pub fn router() -> Router<AppState> {
         .route("/mine", get(mine))
         .route("/feed", get(feed))
         .route("/{id}", get(get_one).put(update).delete(remove))
+        .route("/{id}/moderate", axum::routing::patch(moderate))
         .route("/{id}/images", get(list_images).post(add_image))
         .route("/{id}/images/{image_id}", axum::routing::delete(delete_image))
 }
@@ -89,7 +90,8 @@ async fn list(
     let offset = (page - 1) * per_page;
     let search = q.q.map(|s| format!("%{}%", s.trim().to_lowercase()));
 
-    let filter = "WHERE ($1::text IS NULL OR lower(g.title) LIKE $1 \
+    let filter = "WHERE NOT g.is_hidden \
+        AND ($1::text IS NULL OR lower(g.title) LIKE $1 \
             OR lower(COALESCE(g.description, '')) LIKE $1 \
             OR lower(COALESCE(g.brand, '')) LIKE $1) \
         AND ($2::uuid IS NULL OR g.category_id = $2) \
@@ -151,8 +153,8 @@ async fn mine(State(state): State<AppState>, auth: AuthUser) -> AppResult<Json<V
     Ok(Json(attach_images(&state.db, rows).await?))
 }
 
-/// Baraja de descubrimiento: prendas no evaluadas, priorizadas por talla,
-/// estilo preferido y cercania geografica al usuario.
+/// Baraja de descubrimiento: prendas no evaluadas dentro del radio configurado,
+/// puntuadas por preferencias declaradas, historial de likes y cercania.
 async fn feed(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -160,41 +162,62 @@ async fn feed(
 ) -> AppResult<Json<Vec<Garment>>> {
     let limit = q.limit.unwrap_or(20).clamp(1, 50);
 
-    let me: (Option<f64>, Option<f64>, Vec<String>, Vec<String>, i32) = sqlx::query_as(
-        "SELECT latitude, longitude, preferred_sizes, preferred_styles, max_distance_km \
-         FROM users WHERE id = $1",
-    )
-    .bind(auth.id)
-    .fetch_one(&state.db)
-    .await?;
-
     let sql = format!(
-        "SELECT {GARMENT_COLUMNS}, \
-            CASE WHEN $2::float8 IS NOT NULL AND g.latitude IS NOT NULL THEN \
-                6371 * acos(LEAST(1, GREATEST(-1, \
-                    cos(radians($2::float8)) * cos(radians(g.latitude)) * \
-                    cos(radians(g.longitude) - radians($3::float8)) + \
-                    sin(radians($2::float8)) * sin(radians(g.latitude))))) \
-            END AS distance_km \
-         {FROM_JOIN} \
-         WHERE g.owner_id <> $1 AND g.status = 'disponible' AND u.is_active \
-           AND NOT EXISTS (SELECT 1 FROM swipes s WHERE s.user_id = $1 AND s.garment_id = g.id) \
-           AND ($4::text IS NULL OR g.mode = $4 OR g.mode = 'ambos') \
-           AND ($5::uuid IS NULL OR g.category_id = $5) \
-         ORDER BY (g.size = ANY($6::text[])) DESC, \
-                  (COALESCE(g.style, '') = ANY($7::text[])) DESC, \
-                  distance_km ASC NULLS LAST, g.created_at DESC \
-         LIMIT $8"
+        "WITH me AS ( \
+            SELECT latitude, longitude, preferred_sizes, preferred_styles, max_distance_km \
+            FROM users WHERE id = $1 \
+         ), \
+         liked_categories AS ( \
+            SELECT g.category_id, COUNT(*)::float8 AS hits \
+            FROM swipes s JOIN garments g ON g.id = s.garment_id \
+            WHERE s.user_id = $1 AND s.direction IN ('like', 'super') \
+              AND g.category_id IS NOT NULL \
+            GROUP BY 1 \
+         ), \
+         liked_styles AS ( \
+            SELECT g.style, COUNT(*)::float8 AS hits \
+            FROM swipes s JOIN garments g ON g.id = s.garment_id \
+            WHERE s.user_id = $1 AND s.direction IN ('like', 'super') AND g.style IS NOT NULL \
+            GROUP BY 1 \
+         ), \
+         candidates AS ( \
+            SELECT {GARMENT_COLUMNS}, \
+                CASE WHEN me.latitude IS NOT NULL AND g.latitude IS NOT NULL THEN \
+                    6371 * acos(LEAST(1, GREATEST(-1, \
+                        cos(radians(me.latitude)) * cos(radians(g.latitude)) * \
+                        cos(radians(g.longitude) - radians(me.longitude)) + \
+                        sin(radians(me.latitude)) * sin(radians(g.latitude))))) \
+                END AS distance_km, \
+                (CASE WHEN g.size = ANY(me.preferred_sizes) THEN 3.0 ELSE 0.0 END) \
+                + (CASE WHEN g.style = ANY(me.preferred_styles) THEN 2.0 ELSE 0.0 END) \
+                + LEAST(COALESCE(lc.hits, 0), 5) * 0.6 \
+                + LEAST(COALESCE(ls.hits, 0), 5) * 0.4 AS affinity \
+            FROM garments g \
+            JOIN users u ON u.id = g.owner_id \
+            LEFT JOIN categories c ON c.id = g.category_id \
+            LEFT JOIN liked_categories lc ON lc.category_id = g.category_id \
+            LEFT JOIN liked_styles ls ON ls.style = g.style \
+            CROSS JOIN me \
+            WHERE g.owner_id <> $1 AND g.status = 'disponible' \
+              AND NOT g.is_hidden AND u.is_active \
+              AND NOT EXISTS (SELECT 1 FROM swipes s \
+                    WHERE s.user_id = $1 AND s.garment_id = g.id) \
+              AND NOT EXISTS (SELECT 1 FROM user_blocks b \
+                    WHERE (b.blocker_id = $1 AND b.blocked_id = g.owner_id) \
+                       OR (b.blocker_id = g.owner_id AND b.blocked_id = $1)) \
+              AND ($2::text IS NULL OR g.mode = $2 OR g.mode = 'ambos') \
+              AND ($3::uuid IS NULL OR g.category_id = $3) \
+         ) \
+         SELECT cd.* FROM candidates cd CROSS JOIN me \
+         WHERE cd.distance_km IS NULL OR cd.distance_km <= me.max_distance_km \
+         ORDER BY cd.affinity DESC, cd.distance_km ASC NULLS LAST, cd.created_at DESC \
+         LIMIT $4"
     );
 
     let rows: Vec<GarmentRow> = sqlx::query_as(&sql)
         .bind(auth.id)
-        .bind(me.0)
-        .bind(me.1)
         .bind(q.mode.as_deref())
         .bind(q.category_id)
-        .bind(&me.2)
-        .bind(&me.3)
         .bind(limit)
         .fetch_all(&state.db)
         .await?;
@@ -340,6 +363,25 @@ async fn remove(
         .execute(&state.db)
         .await?;
     Ok(Json(serde_json::json!({ "deleted": true })))
+}
+
+/// Moderacion: oculta o restaura una publicacion sin borrarla.
+async fn moderate(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(id): Path<Uuid>,
+    Json(input): Json<HiddenInput>,
+) -> AppResult<Json<Garment>> {
+    auth.require_admin()?;
+    let res = sqlx::query("UPDATE garments SET is_hidden = $2, updated_at = now() WHERE id = $1")
+        .bind(id)
+        .bind(input.is_hidden)
+        .execute(&state.db)
+        .await?;
+    if res.rows_affected() == 0 {
+        return Err(AppError::NotFound("Prenda no encontrada".into()));
+    }
+    Ok(Json(fetch_garment(&state.db, id).await?))
 }
 
 async fn list_images(

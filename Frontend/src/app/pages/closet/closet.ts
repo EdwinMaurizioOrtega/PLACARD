@@ -47,6 +47,9 @@ import { Garment, STATUSES } from '../../core/models';
                   <span class="chip" [class.chip-warn]="garment.status !== 'disponible'">
                     {{ statusLabel(garment.status) }}
                   </span>
+                  @if (garment.is_hidden) {
+                    <span class="chip chip-warn">Oculta por moderación</span>
+                  }
                 </div>
                 <p class="metrics muted">
                   👁 {{ garment.views }} vistas · ♥ {{ garment.likes_count }} me gusta

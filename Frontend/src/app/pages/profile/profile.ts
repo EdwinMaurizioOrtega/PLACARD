@@ -5,6 +5,7 @@ import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../core/api.service';
 import { AuthService } from '../../core/auth.service';
 import { Review, SIZES, STYLES, Stats } from '../../core/models';
+import { BlockedUser } from '../../core/models';
 
 @Component({
   selector: 'app-profile',
@@ -145,6 +146,26 @@ import { Review, SIZES, STYLES, Stats } from '../../core/models';
       </form>
 
       <section class="card">
+        <h3>Usuarios bloqueados</h3>
+        @if (blocked().length === 0) {
+          <p class="muted">No has bloqueado a nadie.</p>
+        } @else {
+          <div class="stack">
+            @for (item of blocked(); track item.blocked_id) {
+              <div class="row">
+                <img class="avatar" [src]="item.avatar_url" alt="" />
+                <span>
+                  <strong>{{ item.full_name }}</strong>
+                  <small class="muted">&#64;{{ item.username }}</small>
+                </span>
+                <button class="btn btn-ghost btn-sm" (click)="unblock(item)">Desbloquear</button>
+              </div>
+            }
+          </div>
+        }
+      </section>
+
+      <section class="card">
         <h3>Mi reputación ({{ auth.user()?.rating_count }} calificaciones)</h3>
         @if (reviews().length === 0) {
           <p class="muted">Todavía no tienes calificaciones. Completa intercambios para ganarlas.</p>
@@ -246,6 +267,7 @@ export class ProfilePage implements OnInit {
   readonly selectedSizes = signal<string[]>([]);
   readonly selectedStyles = signal<string[]>([]);
   readonly reviews = signal<Review[]>([]);
+  readonly blocked = signal<BlockedUser[]>([]);
   readonly stats = signal<Stats | null>(null);
   readonly saving = signal(false);
   readonly message = signal('');
@@ -285,6 +307,13 @@ export class ProfilePage implements OnInit {
       this.api.reviewsForUser(user.id).subscribe((items) => this.reviews.set(items));
     });
     this.api.stats().subscribe((data) => this.stats.set(data));
+    this.api.listBlocks().subscribe((items) => this.blocked.set(items));
+  }
+
+  unblock(item: BlockedUser) {
+    this.api
+      .unblockUser(item.blocked_id)
+      .subscribe(() => this.blocked.update((list) => list.filter((b) => b.blocked_id !== item.blocked_id)));
   }
 
   coords(): string {

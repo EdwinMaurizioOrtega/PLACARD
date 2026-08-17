@@ -4,6 +4,7 @@ import { Observable } from 'rxjs';
 
 import {
   AuthResponse,
+  BlockedUser,
   Category,
   Garment,
   GarmentImage,
@@ -12,6 +13,7 @@ import {
   MatchInfo,
   Message,
   Page,
+  Report,
   Review,
   Stats,
   Swipe,
@@ -67,6 +69,10 @@ export class ApiService {
     return this.http.delete(`${API_URL}/users/${id}`);
   }
 
+  setUserActive(id: string, isActive: boolean): Observable<User> {
+    return this.http.patch<User>(`${API_URL}/users/${id}/active`, { is_active: isActive });
+  }
+
   // ---------- categorias ----------
   listCategories(): Observable<Category[]> {
     return this.http.get<Category[]>(`${API_URL}/categories`);
@@ -111,6 +117,10 @@ export class ApiService {
 
   deleteGarment(id: string): Observable<unknown> {
     return this.http.delete(`${API_URL}/garments/${id}`);
+  }
+
+  moderateGarment(id: string, isHidden: boolean): Observable<Garment> {
+    return this.http.patch<Garment>(`${API_URL}/garments/${id}/moderate`, { is_hidden: isHidden });
   }
 
   addGarmentImage(id: string, url: string): Observable<GarmentImage> {
@@ -197,6 +207,31 @@ export class ApiService {
 
   deleteReview(id: string): Observable<unknown> {
     return this.http.delete(`${API_URL}/reviews/${id}`);
+  }
+
+  // ---------- moderacion ----------
+  createReport(body: Record<string, unknown>): Observable<Report> {
+    return this.http.post<Report>(`${API_URL}/reports`, body);
+  }
+
+  listReports(status?: string): Observable<Report[]> {
+    return this.http.get<Report[]>(`${API_URL}/reports`, { params: toParams({ status }) });
+  }
+
+  resolveReport(id: string, status: string, resolution?: string): Observable<Report> {
+    return this.http.patch<Report>(`${API_URL}/reports/${id}`, { status, resolution });
+  }
+
+  listBlocks(): Observable<BlockedUser[]> {
+    return this.http.get<BlockedUser[]>(`${API_URL}/blocks`);
+  }
+
+  blockUser(userId: string): Observable<unknown> {
+    return this.http.post(`${API_URL}/blocks`, { user_id: userId });
+  }
+
+  unblockUser(userId: string): Observable<unknown> {
+    return this.http.delete(`${API_URL}/blocks/${userId}`);
   }
 
   // ---------- estadisticas ----------

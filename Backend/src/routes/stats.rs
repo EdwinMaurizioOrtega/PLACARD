@@ -38,7 +38,8 @@ async fn overview(
                 (SELECT COUNT(*) FROM garments WHERE status = 'disponible') AS available_garments, \
                 (SELECT COUNT(*) FROM swipes) AS total_swipes, \
                 (SELECT COUNT(*) FROM matches) AS total_matches, \
-                (SELECT COUNT(*) FROM messages) AS total_messages",
+                (SELECT COUNT(*) FROM messages) AS total_messages, \
+                (SELECT COUNT(*) FROM reports WHERE status = 'pendiente') AS pending_reports",
     )
     .fetch_one(&state.db)
     .await?;

@@ -9,7 +9,7 @@ use uuid::Uuid;
 use crate::{
     auth::{hash_password, AuthUser},
     error::{AppError, AppResult},
-    models::{Page, UpdateUserInput, User, USER_COLUMNS},
+    models::{ActiveInput, Page, UpdateUserInput, User, USER_COLUMNS, USER_PUBLIC_COLUMNS},
     state::AppState,
 };
 
@@ -26,6 +26,7 @@ pub fn router() -> Router<AppState> {
         .route("/", get(list_users))
         .route("/{id}", get(get_user).put(update_user))
         .route("/{id}", delete(delete_user))
+        .route("/{id}/active", axum::routing::patch(set_active))
 }
 
 async fn list_users(
@@ -38,8 +39,7 @@ async fn list_users(
     let offset = (page - 1) * per_page;
     let search = q.q.map(|s| format!("%{}%", s.trim().to_lowercase()));
 
-    let filter = "WHERE is_active \
-        AND ($1::text IS NULL OR lower(username) LIKE $1 OR lower(full_name) LIKE $1) \
+    let filter = "WHERE ($1::text IS NULL OR lower(username) LIKE $1 OR lower(full_name) LIKE $1) \
         AND ($2::text IS NULL OR city = $2)";
 
     let total: (i64,) = sqlx::query_as(&format!("SELECT COUNT(*) FROM users {filter}"))
@@ -49,7 +49,8 @@ async fn list_users(
         .await?;
 
     let items: Vec<User> = sqlx::query_as(&format!(
-        "SELECT {USER_COLUMNS} FROM users {filter} ORDER BY created_at DESC LIMIT $3 OFFSET $4"
+        "SELECT {USER_PUBLIC_COLUMNS} FROM users {filter} ORDER BY created_at DESC \
+         LIMIT $3 OFFSET $4"
     ))
     .bind(search.as_deref())
     .bind(q.city.as_deref())
@@ -66,8 +67,17 @@ async fn list_users(
     }))
 }
 
-async fn get_user(State(state): State<AppState>, Path(id): Path<Uuid>) -> AppResult<Json<User>> {
-    let user: User = sqlx::query_as(&format!("SELECT {USER_COLUMNS} FROM users WHERE id = $1"))
+async fn get_user(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(id): Path<Uuid>,
+) -> AppResult<Json<User>> {
+    let columns = if auth.id == id || auth.is_admin {
+        USER_COLUMNS
+    } else {
+        USER_PUBLIC_COLUMNS
+    };
+    let user: User = sqlx::query_as(&format!("SELECT {columns} FROM users WHERE id = $1"))
         .bind(id)
         .fetch_optional(&state.db)
         .await?
@@ -146,4 +156,24 @@ async fn delete_user(
         return Err(AppError::NotFound("Usuario no encontrado".into()));
     }
     Ok(Json(serde_json::json!({ "deleted": true })))
+}
+
+/// Suspension de cuentas por moderacion.
+async fn set_active(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(id): Path<Uuid>,
+    Json(input): Json<ActiveInput>,
+) -> AppResult<Json<User>> {
+    auth.require_admin()?;
+    let user: User = sqlx::query_as(&format!(
+        "UPDATE users SET is_active = $2, updated_at = now() WHERE id = $1 \
+         RETURNING {USER_COLUMNS}"
+    ))
+    .bind(id)
+    .bind(input.is_active)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| AppError::NotFound("Usuario no encontrado".into()))?;
+    Ok(Json(user))
 }

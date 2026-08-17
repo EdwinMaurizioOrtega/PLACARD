@@ -101,6 +101,22 @@ async fn create(
         ));
     }
 
+    let blocked: Option<(i64,)> = sqlx::query_as(
+        "SELECT 1::int8 FROM user_blocks \
+         WHERE (blocker_id = $1 AND blocked_id = $2) OR (blocker_id = $2 AND blocked_id = $1) \
+         LIMIT 1",
+    )
+    .bind(auth.id)
+    .bind(owner_id)
+    .fetch_optional(&state.db)
+    .await?;
+
+    if blocked.is_some() {
+        return Err(AppError::Forbidden(
+            "No puedes interactuar con este usuario".into(),
+        ));
+    }
+
     let swipe: Swipe = sqlx::query_as(
         "INSERT INTO swipes (user_id, garment_id, direction) VALUES ($1, $2, $3) \
          ON CONFLICT (user_id, garment_id) \

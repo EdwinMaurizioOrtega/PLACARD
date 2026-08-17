@@ -34,6 +34,14 @@ pub const USER_COLUMNS: &str = "id, email, username, full_name, bio, avatar_url,
      neighborhood, latitude, longitude, preferred_sizes, preferred_styles, max_distance_km, role, \
      rating_avg, rating_count, is_active, created_at, updated_at";
 
+/// Vista de terceros: coordenadas redondeadas a ~1 km y sin datos de contacto.
+pub const USER_PUBLIC_COLUMNS: &str = "id, ''::text AS email, username, full_name, bio, avatar_url, \
+     NULL::text AS phone, city, neighborhood, \
+     round(latitude::numeric, 2)::float8 AS latitude, \
+     round(longitude::numeric, 2)::float8 AS longitude, \
+     preferred_sizes, preferred_styles, max_distance_km, role, rating_avg, rating_count, \
+     is_active, created_at, updated_at";
+
 #[derive(Debug, Deserialize)]
 pub struct RegisterInput {
     pub email: String,
@@ -127,6 +135,7 @@ pub struct GarmentRow {
     pub longitude: Option<f64>,
     pub views: i32,
     pub likes_count: i32,
+    pub is_hidden: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub owner_username: String,
@@ -145,9 +154,12 @@ pub struct Garment {
 }
 
 /// Columnas comunes para todas las consultas de prendas (alias g / u / c).
+/// Las coordenadas se redondean a dos decimales (~1 km) para no exponer el domicilio.
 pub const GARMENT_COLUMNS: &str = "g.id, g.owner_id, g.category_id, g.title, g.description, \
-     g.brand, g.color, g.style, g.size, g.condition, g.mode, g.status, g.price, g.latitude, \
-     g.longitude, g.views, g.likes_count, g.created_at, g.updated_at, \
+     g.brand, g.color, g.style, g.size, g.condition, g.mode, g.status, g.price, \
+     round(g.latitude::numeric, 2)::float8 AS latitude, \
+     round(g.longitude::numeric, 2)::float8 AS longitude, \
+     g.views, g.likes_count, g.is_hidden, g.created_at, g.updated_at, \
      u.username AS owner_username, u.full_name AS owner_full_name, \
      u.avatar_url AS owner_avatar_url, u.rating_avg AS owner_rating, c.name AS category_name";
 
@@ -328,6 +340,7 @@ pub struct Overview {
     pub total_swipes: i64,
     pub total_matches: i64,
     pub total_messages: i64,
+    pub pending_reports: i64,
 }
 
 #[derive(Debug, Serialize, FromRow)]
@@ -335,3 +348,74 @@ pub struct CategoryStat {
     pub category: String,
     pub total: i64,
 }
+
+// ============================ MODERACION ============================
+
+#[derive(Debug, Serialize, FromRow)]
+pub struct Report {
+    pub id: Uuid,
+    pub reporter_id: Uuid,
+    pub target_user_id: Option<Uuid>,
+    pub target_garment_id: Option<Uuid>,
+    pub reason: String,
+    pub details: Option<String>,
+    pub status: String,
+    pub resolution: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub reviewed_at: Option<DateTime<Utc>>,
+    pub reporter_username: String,
+    pub target_username: Option<String>,
+    pub target_garment_title: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ReportInput {
+    pub target_user_id: Option<Uuid>,
+    pub target_garment_id: Option<Uuid>,
+    pub reason: String,
+    pub details: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ReportResolution {
+    pub status: String,
+    pub resolution: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ReportQuery {
+    pub status: Option<String>,
+}
+
+#[derive(Debug, Serialize, FromRow)]
+pub struct BlockedUser {
+    pub blocked_id: Uuid,
+    pub username: String,
+    pub full_name: String,
+    pub avatar_url: Option<String>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct BlockInput {
+    pub user_id: Uuid,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ActiveInput {
+    pub is_active: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct HiddenInput {
+    pub is_hidden: bool,
+}
+
+pub const REPORT_REASONS: [&str; 6] = [
+    "spam",
+    "fraude",
+    "contenido_inapropiado",
+    "prenda_no_corresponde",
+    "acoso",
+    "otro",
+];

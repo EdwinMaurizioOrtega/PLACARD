@@ -6,12 +6,13 @@ import { Router } from '@angular/router';
 import { ApiService } from '../../core/api.service';
 import { AuthService } from '../../core/auth.service';
 import { Category, Garment, MatchInfo } from '../../core/models';
+import { ReportDialog } from '../../shared/report-dialog';
 
 const SWIPE_THRESHOLD = 110;
 
 @Component({
   selector: 'app-discover',
-  imports: [CurrencyPipe, DecimalPipe, FormsModule],
+  imports: [CurrencyPipe, DecimalPipe, FormsModule, ReportDialog],
   template: `
     <div class="page discover">
       <div class="page-head">
@@ -78,6 +79,15 @@ const SWIPE_THRESHOLD = 110;
                   @if (i === 0) {
                     <span class="stamp like" [style.opacity]="likeOpacity()">ME GUSTA</span>
                     <span class="stamp nope" [style.opacity]="nopeOpacity()">PASO</span>
+                    <button
+                      type="button"
+                      class="report"
+                      title="Reportar publicación"
+                      (pointerdown)="$event.stopPropagation()"
+                      (click)="reporting.set(garment)"
+                    >
+                      ⚑
+                    </button>
                   }
                   <div class="badges">
                     <span class="chip">{{ modeLabel(garment.mode) }}</span>
@@ -129,6 +139,15 @@ const SWIPE_THRESHOLD = 110;
           </div>
           <p class="hint muted">Arrastra la tarjeta o usa las flechas del teclado ← ↑ →</p>
         </div>
+      }
+
+      @if (reporting(); as garment) {
+        <app-report-dialog
+          [garmentId]="garment.id"
+          [userId]="garment.owner_id"
+          [label]="'la publicación ' + garment.title"
+          (closed)="reporting.set(null)"
+        />
       }
 
       @if (matched(); as info) {
@@ -265,6 +284,24 @@ const SWIPE_THRESHOLD = 110;
       transform: rotate(14deg);
     }
 
+    .report {
+      position: absolute;
+      right: 0.7rem;
+      bottom: 0.7rem;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      border: none;
+      background: rgba(255, 255, 255, 0.92);
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 0.95rem;
+    }
+
+    .report:hover {
+      color: var(--danger);
+    }
+
     .info {
       padding: 1rem 1.15rem;
       display: flex;
@@ -391,6 +428,7 @@ export class DiscoverPage implements OnInit {
   readonly categories = signal<Category[]>([]);
   readonly loading = signal(true);
   readonly matched = signal<MatchInfo | null>(null);
+  readonly reporting = signal<Garment | null>(null);
   readonly photoIndex = signal(0);
   readonly dragX = signal(0);
   readonly dragY = signal(0);
@@ -468,7 +506,7 @@ export class DiscoverPage implements OnInit {
 
   @HostListener('window:keydown', ['$event'])
   onKey(event: KeyboardEvent) {
-    if (this.matched() || !this.current()) return;
+    if (this.matched() || this.reporting() || !this.current()) return;
     if (event.key === 'ArrowRight') this.decide('like');
     if (event.key === 'ArrowLeft') this.decide('pass');
     if (event.key === 'ArrowUp') this.decide('super');

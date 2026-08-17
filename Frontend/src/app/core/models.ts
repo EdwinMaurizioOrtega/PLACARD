@@ -60,6 +60,7 @@ export interface Garment {
   longitude: number | null;
   views: number;
   likes_count: number;
+  is_hidden: boolean;
   created_at: string;
   updated_at: string;
   owner_username: string;
@@ -155,6 +156,7 @@ export interface Stats {
     total_swipes: number;
     total_matches: number;
     total_messages: number;
+    pending_reports: number;
   };
   by_category: { category: string; total: number }[];
   mine: {
@@ -187,3 +189,36 @@ export const STATUSES = [
 export const SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'U', '36', '37', '38', '39', '40', '41', '42'];
 
 export const STYLES = ['casual', 'formal', 'streetwear', 'deportivo', 'boho', 'vintage'];
+
+export interface Report {
+  id: string;
+  reporter_id: string;
+  target_user_id: string | null;
+  target_garment_id: string | null;
+  reason: string;
+  details: string | null;
+  status: 'pendiente' | 'revisado' | 'descartado';
+  resolution: string | null;
+  created_at: string;
+  reviewed_at: string | null;
+  reporter_username: string;
+  target_username: string | null;
+  target_garment_title: string | null;
+}
+
+export interface BlockedUser {
+  blocked_id: string;
+  username: string;
+  full_name: string;
+  avatar_url: string | null;
+  created_at: string;
+}
+
+export const REPORT_REASONS = [
+  { value: 'spam', label: 'Spam o publicidad' },
+  { value: 'fraude', label: 'Posible fraude o estafa' },
+  { value: 'contenido_inapropiado', label: 'Contenido inapropiado' },
+  { value: 'prenda_no_corresponde', label: 'La prenda no corresponde a la descripción' },
+  { value: 'acoso', label: 'Acoso o mensajes ofensivos' },
+  { value: 'otro', label: 'Otro motivo' },
+] as const;
