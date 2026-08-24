@@ -35,7 +35,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let port: u16 = std::env::var("PORT")
         .ok()
         .and_then(|v| v.parse().ok())
-        .unwrap_or(8080);
+        .unwrap_or(80);
 
     let db = PgPoolOptions::new()
         .max_connections(10)
@@ -78,6 +78,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind(("0.0.0.0", port)).await?;
+    tracing::info!("PLACARD API iniciada correctamente y ejecutandose");
+    tracing::info!("Puerto: {port}");
     tracing::info!("PLACARD API escuchando en http://localhost:{port}/api");
     axum::serve(listener, app).await?;
     Ok(())
