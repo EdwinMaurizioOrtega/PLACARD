@@ -2,6 +2,7 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 
+import { environment } from '../../environments/environment';
 import {
   AuthResponse,
   BlockedUser,
@@ -21,7 +22,7 @@ import {
   User,
 } from './models';
 
-export const API_URL = 'http://localhost:80/api';
+export const API_URL = environment.apiUrl;
 
 type Dict = Record<string, string | number | boolean | null | undefined>;
 
