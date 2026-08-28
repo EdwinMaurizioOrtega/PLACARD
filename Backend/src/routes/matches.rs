@@ -20,7 +20,7 @@ use crate::{
 struct MatchDetail {
     #[serde(flatten)]
     info: MatchRow,
-    garments: Vec<Garment>,
+    garment: Option<Garment>,
 }
 
 pub fn router() -> Router<AppState> {
@@ -33,7 +33,7 @@ pub fn router() -> Router<AppState> {
 
 async fn ensure_member(state: &AppState, auth: &AuthUser, match_id: Uuid) -> AppResult<()> {
     let exists: Option<(Uuid,)> = sqlx::query_as(
-        "SELECT id FROM matches WHERE id = $1 AND (user_a = $2 OR user_b = $2)",
+        "SELECT id FROM matches WHERE id = $1 AND (interested_id = $2 OR owner_id = $2)",
     )
     .bind(match_id)
     .bind(auth.id)
@@ -46,7 +46,7 @@ async fn ensure_member(state: &AppState, auth: &AuthUser, match_id: Uuid) -> App
 
 async fn list(State(state): State<AppState>, auth: AuthUser) -> AppResult<Json<Vec<MatchRow>>> {
     let items: Vec<MatchRow> = sqlx::query_as(&format!(
-        "{MATCH_SELECT} WHERE (m.user_a = $1 OR m.user_b = $1) \
+        "{MATCH_SELECT} WHERE (m.interested_id = $1 OR m.owner_id = $1) \
          ORDER BY COALESCE(lm.created_at, m.created_at) DESC"
     ))
     .bind(auth.id)
@@ -61,23 +61,20 @@ async fn detail(
     Path(id): Path<Uuid>,
 ) -> AppResult<Json<MatchDetail>> {
     let info = fetch_match(&state.db, auth.id, id).await?;
-    let ids: Vec<Uuid> = [info.garment_a, info.garment_b]
-        .into_iter()
-        .flatten()
-        .collect();
 
     let rows: Vec<GarmentRow> = sqlx::query_as(&format!(
-        "SELECT {GARMENT_COLUMNS}, NULL::float8 AS distance_km FROM garments g \
+        "SELECT {GARMENT_COLUMNS}, NULL::float8 AS distance_km, 0 AS times_seen, \
+         false AS i_super_liked FROM garments g \
          JOIN users u ON u.id = g.owner_id \
-         LEFT JOIN categories c ON c.id = g.category_id WHERE g.id = ANY($1)"
+         LEFT JOIN categories c ON c.id = g.category_id WHERE g.id = $1"
     ))
-    .bind(&ids)
+    .bind(info.garment_id)
     .fetch_all(&state.db)
     .await?;
 
     Ok(Json(MatchDetail {
         info,
-        garments: attach_images(&state.db, rows).await?,
+        garment: attach_images(&state.db, rows).await?.into_iter().next(),
     }))
 }
 

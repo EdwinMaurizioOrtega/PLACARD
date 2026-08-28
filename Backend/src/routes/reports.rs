@@ -160,7 +160,7 @@ async fn block(
     .await?;
 
     sqlx::query(
-        "DELETE FROM matches WHERE (user_a = $1 AND user_b = $2) OR (user_a = $2 AND user_b = $1)",
+        "DELETE FROM matches WHERE (interested_id = $1 AND owner_id = $2) OR (interested_id = $2 AND owner_id = $1)",
     )
     .bind(auth.id)
     .bind(input.user_id)

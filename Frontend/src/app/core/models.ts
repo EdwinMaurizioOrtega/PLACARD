@@ -60,6 +60,7 @@ export interface Garment {
   longitude: number | null;
   views: number;
   likes_count: number;
+  super_likes_count: number;
   is_hidden: boolean;
   created_at: string;
   updated_at: string;
@@ -69,7 +70,14 @@ export interface Garment {
   owner_rating: number;
   category_name: string | null;
   distance_km: number | null;
+  times_seen: number;
+  i_super_liked: boolean;
   images: GarmentImage[];
+}
+
+export interface SuperLikeResult {
+  active: boolean;
+  super_likes: number;
 }
 
 export interface Page<T> {
@@ -84,15 +92,18 @@ export interface Swipe {
   user_id: string;
   garment_id: string;
   direction: 'like' | 'pass' | 'super';
+  times_seen: number;
   created_at: string;
 }
 
+export type MatchIntent = 'venta' | 'intercambio';
+
 export interface MatchInfo {
   id: string;
-  user_a: string;
-  user_b: string;
-  garment_a: string | null;
-  garment_b: string | null;
+  interested_id: string;
+  owner_id: string;
+  garment_id: string;
+  intent: MatchIntent;
   status: 'activo' | 'cerrado' | 'cancelado';
   created_at: string;
   other_user_id: string;
@@ -100,18 +111,23 @@ export interface MatchInfo {
   other_full_name: string;
   other_avatar_url: string | null;
   other_rating: number;
+  garment_title: string;
+  garment_mode: 'venta' | 'intercambio' | 'ambos';
+  garment_price: number | null;
+  garment_image: string | null;
   last_message: string | null;
   last_message_at: string | null;
   unread_count: number;
 }
 
 export interface MatchDetail extends MatchInfo {
-  garments: Garment[];
+  garment: Garment | null;
 }
 
 export interface SwipeResult {
   swipe: Swipe;
   matched: boolean;
+  already: boolean;
   match_info?: MatchInfo;
 }
 
@@ -164,6 +180,72 @@ export interface Stats {
     my_likes_received: number;
     my_matches: number;
     unread_messages: number;
+  };
+}
+
+export interface LabelCount {
+  label: string;
+  total: number;
+}
+
+export interface AdminReport {
+  funnel: {
+    views: number;
+    likes: number;
+    supers: number;
+    matches: number;
+    chats: number;
+    exchanges: number;
+  };
+  timeline: {
+    month: string;
+    users: number;
+    garments: number;
+    swipes: number;
+    matches: number;
+    messages: number;
+  }[];
+  catalog: {
+    by_category: LabelCount[];
+    by_size: LabelCount[];
+    by_mode: LabelCount[];
+    by_condition: LabelCount[];
+    totals: {
+      inventory_value: number | null;
+      avg_price: number | null;
+      for_sale: number;
+      with_photo: number;
+    };
+  };
+  geo: {
+    by_area: { label: string; users: number; garments: number; matches: number }[];
+    by_zone: LabelCount[];
+    by_city: LabelCount[];
+    totals: {
+      avg_distance_km: number | null;
+      with_coords: number;
+      without_coords: number;
+    };
+  };
+  community: {
+    totals: {
+      active_users: number;
+      suspended_users: number;
+      avg_rating: number | null;
+      total_reviews: number;
+      silent_matches: number;
+    };
+    rating_distribution: LabelCount[];
+    top_users: {
+      username: string;
+      full_name: string;
+      avatar_url: string | null;
+      rating_avg: number;
+      rating_count: number;
+      garments: number;
+    }[];
+    by_intent: LabelCount[];
+    by_match_status: LabelCount[];
   };
 }
 

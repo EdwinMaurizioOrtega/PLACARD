@@ -135,6 +135,7 @@ pub struct GarmentRow {
     pub longitude: Option<f64>,
     pub views: i32,
     pub likes_count: i32,
+    pub super_likes_count: i32,
     pub is_hidden: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -144,6 +145,10 @@ pub struct GarmentRow {
     pub owner_rating: f32,
     pub category_name: Option<String>,
     pub distance_km: Option<f64>,
+    /// Veces que el usuario ya paso por este anuncio en la baraja.
+    pub times_seen: i32,
+    /// El usuario que consulta tiene su super like puesto en este anuncio.
+    pub i_super_liked: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -159,7 +164,7 @@ pub const GARMENT_COLUMNS: &str = "g.id, g.owner_id, g.category_id, g.title, g.d
      g.brand, g.color, g.style, g.size, g.condition, g.mode, g.status, g.price, \
      round(g.latitude::numeric, 2)::float8 AS latitude, \
      round(g.longitude::numeric, 2)::float8 AS longitude, \
-     g.views, g.likes_count, g.is_hidden, g.created_at, g.updated_at, \
+     g.views, g.likes_count, g.super_likes_count, g.is_hidden, g.created_at, g.updated_at, \
      u.username AS owner_username, u.full_name AS owner_full_name, \
      u.avatar_url AS owner_avatar_url, u.rating_avg AS owner_rating, c.name AS category_name";
 
@@ -219,6 +224,8 @@ pub struct FeedQuery {
     pub mode: Option<String>,
     pub category_id: Option<Uuid>,
     pub limit: Option<i64>,
+    /// Vuelve a repartir anuncios ya evaluados cuando se agota la baraja.
+    pub repeat: Option<bool>,
 }
 
 #[derive(Debug, Serialize)]
@@ -243,6 +250,7 @@ pub struct Swipe {
     pub user_id: Uuid,
     pub garment_id: Uuid,
     pub direction: String,
+    pub times_seen: i32,
     pub created_at: DateTime<Utc>,
 }
 
@@ -250,15 +258,17 @@ pub struct Swipe {
 pub struct SwipeInput {
     pub garment_id: Uuid,
     pub direction: String,
+    /// Solo obligatorio cuando la prenda admite venta e intercambio.
+    pub intent: Option<String>,
 }
 
 #[derive(Debug, Serialize, FromRow)]
 pub struct MatchRow {
     pub id: Uuid,
-    pub user_a: Uuid,
-    pub user_b: Uuid,
-    pub garment_a: Option<Uuid>,
-    pub garment_b: Option<Uuid>,
+    pub interested_id: Uuid,
+    pub owner_id: Uuid,
+    pub garment_id: Uuid,
+    pub intent: String,
     pub status: String,
     pub created_at: DateTime<Utc>,
     pub other_user_id: Uuid,
@@ -266,6 +276,10 @@ pub struct MatchRow {
     pub other_full_name: String,
     pub other_avatar_url: Option<String>,
     pub other_rating: f32,
+    pub garment_title: String,
+    pub garment_mode: String,
+    pub garment_price: Option<Decimal>,
+    pub garment_image: Option<String>,
     pub last_message: Option<String>,
     pub last_message_at: Option<DateTime<Utc>>,
     pub unread_count: i64,
@@ -275,6 +289,8 @@ pub struct MatchRow {
 pub struct SwipeResult {
     pub swipe: Swipe,
     pub matched: bool,
+    /// Ya existia una conversacion con este anuncio, no se creo otra.
+    pub already: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub match_info: Option<MatchRow>,
 }

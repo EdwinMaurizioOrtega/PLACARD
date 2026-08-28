@@ -1,8 +1,7 @@
 @if (auth.isLoggedIn()) {
   <header class="topbar">
     <a class="brand" routerLink="/descubrir">
-      <span class="brand-mark">P</span>
-      <span class="brand-text">PLACARD</span>
+      <img class="brand-logo" src="logo-placard.png" alt="PLACARD S.A." />
     </a>
 
     <nav class="links">
@@ -16,6 +15,9 @@
     </nav>
 
     <div class="user">
+      <span class="geo-pill" [class.off]="!auth.hasLocation()" [title]="geoTitle()">
+        📍 {{ auth.hasLocation() ? 'Ubicación activa' : 'Sin ubicación' }}
+      </span>
       <a routerLink="/perfil" class="user-link">
         <img class="avatar" [src]="auth.user()?.avatar_url || fallbackAvatar" alt="" />
         <span class="user-name">{{ auth.user()?.username }}</span>
@@ -28,3 +30,17 @@
 <main>
   <router-outlet />
 </main>
+
+@if (auth.isLoggedIn() && !auth.hasLocation()) {
+  <button type="button" class="geo-fab" (click)="enableLocation()" [disabled]="locating()">
+    <span class="pin">📍</span>
+    <span>{{ locating() ? 'Buscando…' : 'Activar ubicación' }}</span>
+  </button>
+}
+
+@if (locationError()) {
+  <div class="geo-toast" role="alert">
+    {{ locationError() }}
+    <button type="button" (click)="locationError.set('')">✕</button>
+  </div>
+}

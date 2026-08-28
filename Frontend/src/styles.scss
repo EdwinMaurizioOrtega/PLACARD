@@ -2,21 +2,22 @@
    PLACARD S.A. - Sistema visual de la plataforma de moda circular
    ============================================================ */
 
+/* Paleta tomada del logotipo: verde esmeralda -> azul, con tinta azul profundo. */
 :root {
-  --brand: #e0457b;
-  --brand-dark: #b32d5e;
-  --brand-soft: #ffe6ef;
-  --accent: #2ec4b6;
-  --accent-dark: #1f9c90;
-  --ink: #241c26;
-  --muted: #7b6f80;
-  --line: #ece6ee;
-  --bg: #faf7fb;
+  --brand: #2f7fb0;
+  --brand-dark: #1d5b83;
+  --brand-soft: #e3f0f7;
+  --accent: #34a37d;
+  --accent-dark: #23805f;
+  --ink: #17394a;
+  --muted: #6b8494;
+  --line: #dfe9ee;
+  --bg: #f5f9fa;
   --surface: #ffffff;
-  --danger: #e5484d;
+  --danger: #d9534f;
   --radius: 18px;
-  --shadow: 0 10px 30px rgba(56, 25, 45, 0.09);
-  --shadow-lg: 0 20px 50px rgba(56, 25, 45, 0.18);
+  --shadow: 0 10px 30px rgba(23, 57, 74, 0.09);
+  --shadow-lg: 0 20px 50px rgba(23, 57, 74, 0.18);
 }
 
 * {
@@ -114,14 +115,14 @@ a:hover {
 }
 
 .btn-primary {
-  background: linear-gradient(135deg, var(--brand), #ff7aa8);
+  background: linear-gradient(135deg, var(--accent), var(--brand));
   color: #fff;
-  box-shadow: 0 8px 20px rgba(224, 69, 123, 0.28);
+  box-shadow: 0 8px 20px rgba(47, 127, 176, 0.28);
 }
 
 .btn-accent {
-  background: linear-gradient(135deg, var(--accent), #63dfd2);
-  color: #04302c;
+  background: linear-gradient(135deg, var(--accent-dark), var(--accent));
+  color: #fff;
 }
 
 .btn-ghost {

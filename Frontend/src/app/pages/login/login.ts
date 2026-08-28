@@ -10,14 +10,13 @@ import { AuthService } from '../../core/auth.service';
   template: `
     <div class="auth">
       <section class="hero">
-        <span class="brand-mark">P</span>
-        <h1>PLACARD</h1>
+        <img class="logo" src="logo-placard.png" alt="PLACARD S.A." />
         <p>
           Moda circular en Cuenca. Desliza, haz match e intercambia las prendas que ya no usas.
         </p>
         <ul>
           <li>👗 Descubre prendas cercanas con un swipe</li>
-          <li>🤝 Haz match cuando el interés es mutuo</li>
+          <li>🤝 Haz match en un producto de interés</li>
           <li>♻️ Alarga la vida útil de tu ropa</li>
         </ul>
       </section>
@@ -44,6 +43,10 @@ import { AuthService } from '../../core/auth.service';
           </button>
         </form>
 
+        <p class="geo muted">
+          📍 Al entrar te pediremos tu ubicación para mostrarte prendas cercanas a donde estás hoy.
+        </p>
+
         <p class="foot">¿Aún no tienes cuenta? <a routerLink="/registro">Regístrate</a></p>
         <p class="demo">Demo: mariajose&#64;placard.ec / placard123</p>
       </section>
@@ -57,7 +60,7 @@ import { AuthService } from '../../core/auth.service';
       align-items: center;
       gap: 2rem;
       padding: 2rem;
-      background: linear-gradient(135deg, #fff1f6 0%, #f6f2ff 55%, #e9fbf8 100%);
+      background: linear-gradient(135deg, #eaf6f1 0%, #eef4f8 55%, #e3eef5 100%);
     }
 
     .hero {
@@ -66,10 +69,11 @@ import { AuthService } from '../../core/auth.service';
       padding: 1rem;
     }
 
-    .hero h1 {
-      font-size: 2.8rem;
-      letter-spacing: 0.16em;
-      margin: 0.6rem 0;
+    .hero .logo {
+      width: min(340px, 100%);
+      height: auto;
+      display: block;
+      margin-bottom: 1.2rem;
     }
 
     .hero p {
@@ -87,18 +91,6 @@ import { AuthService } from '../../core/auth.service';
       font-weight: 500;
     }
 
-    .brand-mark {
-      display: grid;
-      place-items: center;
-      width: 54px;
-      height: 54px;
-      border-radius: 16px;
-      background: linear-gradient(135deg, var(--brand), #ff8fb4);
-      color: #fff;
-      font-size: 1.6rem;
-      font-weight: 800;
-    }
-
     .form {
       width: min(400px, 100%);
       padding: 2rem;
@@ -110,6 +102,13 @@ import { AuthService } from '../../core/auth.service';
       text-align: center;
       font-size: 0.85rem;
       margin: 0.9rem 0 0;
+    }
+
+    .geo {
+      font-size: 0.78rem;
+      text-align: center;
+      margin: 0.9rem 0 0;
+      line-height: 1.4;
     }
 
     .demo {
@@ -142,7 +141,9 @@ export class LoginPage {
     this.loading.set(true);
     this.error.set('');
     this.auth.login(this.email, this.password).subscribe({
-      next: () => this.router.navigate(['/descubrir']),
+      next: () =>
+        // Se espera la ubicacion para que la primera baraja ya salga ordenada por cercania.
+        this.auth.syncLocation().subscribe(() => this.router.navigate(['/descubrir'])),
       error: (err) => {
         this.error.set(err?.error?.error ?? 'No se pudo iniciar sesión');
         this.loading.set(false);

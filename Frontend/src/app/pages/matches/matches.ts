@@ -3,6 +3,7 @@ import { DatePipe } from '@angular/common';
 import { RouterLink } from '@angular/router';
 
 import { ApiService } from '../../core/api.service';
+import { AuthService } from '../../core/auth.service';
 import { LikeReceived, MatchInfo } from '../../core/models';
 
 @Component({
@@ -13,14 +14,14 @@ import { LikeReceived, MatchInfo } from '../../core/models';
       <div class="page-head">
         <div>
           <h1>Matches</h1>
-          <p class="subtitle">Conversaciones activas y personas interesadas en tus prendas.</p>
+          <p class="subtitle">Conversaciones activas y anuncios tuyos destacados por la comunidad.</p>
         </div>
         <div class="tabs">
           <button class="tab" [class.on]="tab() === 'matches'" (click)="tab.set('matches')">
             Matches ({{ matches().length }})
           </button>
           <button class="tab" [class.on]="tab() === 'likes'" (click)="tab.set('likes')">
-            Me gustan tus prendas ({{ likes().length }})
+            ★ Super likes ({{ likes().length }})
           </button>
         </div>
       </div>
@@ -32,7 +33,7 @@ import { LikeReceived, MatchInfo } from '../../core/models';
           <div class="empty card">
             <span class="big">💞</span>
             <h3>Todavía no tienes matches</h3>
-            <p>Sigue deslizando en Descubrir: el match ocurre cuando el interés es mutuo.</p>
+            <p>Da me gusta a un anuncio en Descubrir y se abre la conversación al instante.</p>
             <a class="btn btn-primary" routerLink="/descubrir">Ir a descubrir</a>
           </div>
         } @else {
@@ -49,10 +50,11 @@ import { LikeReceived, MatchInfo } from '../../core/models';
                     {{ match.last_message ?? 'Escriban el primer mensaje para coordinar.' }}
                   </p>
                   <div class="row">
-                    <span class="chip chip-muted">&#64;{{ match.other_username }}</span>
-                    <span class="chip" [class.chip-accent]="match.status === 'activo'">
-                      {{ match.status }}
-                    </span>
+                    <span class="chip chip-accent">{{ intentLabel(match) }}</span>
+                    <span class="chip chip-muted">{{ match.garment_title }}</span>
+                    @if (match.status !== 'activo') {
+                      <span class="chip">{{ match.status }}</span>
+                    }
                   </div>
                 </div>
                 @if (match.unread_count > 0) {
@@ -65,8 +67,8 @@ import { LikeReceived, MatchInfo } from '../../core/models';
       } @else {
         @if (likes().length === 0) {
           <div class="empty card">
-            <span class="big">👀</span>
-            <h3>Aún nadie ha marcado tus prendas</h3>
+            <span class="big">★</span>
+            <h3>Todavía nadie ha destacado tus prendas</h3>
             <p>Publica más prendas y agrega buenas fotografías para llamar la atención.</p>
           </div>
         } @else {
@@ -77,13 +79,11 @@ import { LikeReceived, MatchInfo } from '../../core/models';
                 <div class="info">
                   <strong>{{ like.full_name }}</strong>
                   <p class="last muted">
-                    Le gustó tu prenda <strong>{{ like.garment_title }}</strong>
+                    Destacó tu prenda <strong>{{ like.garment_title }}</strong>
                   </p>
                   <div class="row">
+                    <span class="chip chip-warn">★ Super like</span>
                     <span class="chip chip-muted">{{ like.created_at | date: 'dd/MM/yyyy' }}</span>
-                    @if (like.direction === 'super') {
-                      <span class="chip chip-warn">★ Super like</span>
-                    }
                   </div>
                 </div>
                 <a class="btn btn-ghost btn-sm" [routerLink]="['/usuarios', like.user_id]">
@@ -175,6 +175,7 @@ import { LikeReceived, MatchInfo } from '../../core/models';
 })
 export class MatchesPage implements OnInit {
   private readonly api = inject(ApiService);
+  private readonly auth = inject(AuthService);
 
   readonly matches = signal<MatchInfo[]>([]);
   readonly likes = signal<LikeReceived[]>([]);
@@ -190,5 +191,12 @@ export class MatchesPage implements OnInit {
       error: () => this.loading.set(false),
     });
     this.api.likesReceived().subscribe((items) => this.likes.set(items));
+  }
+
+  intentLabel(match: MatchInfo): string {
+    const verb = match.intent === 'venta' ? 'comprar' : 'intercambiar';
+    return match.interested_id === this.auth.user()?.id
+      ? `Quieres ${verb}`
+      : `Quiere ${verb}`;
   }
 }

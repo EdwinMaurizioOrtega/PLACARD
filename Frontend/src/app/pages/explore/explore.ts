@@ -76,6 +76,7 @@ import { CONDITIONS, Category, Garment, MODES, SIZES } from '../../core/models';
                   <span class="chip chip-muted">Talla {{ garment.size }}</span>
                   <span class="chip chip-muted">{{ conditionLabel(garment.condition) }}</span>
                   <span class="chip">{{ modeLabel(garment.mode) }}</span>
+                  <span class="chip chip-warn">★ {{ garment.super_likes_count }}</span>
                 </div>
                 <a class="owner" [routerLink]="['/usuarios', garment.owner_id]">
                   <img class="avatar" [src]="garment.owner_avatar_url" alt="" />
@@ -144,7 +145,7 @@ import { CONDITIONS, Category, Garment, MODES, SIZES } from '../../core/models';
       width: 100%;
       height: 240px;
       object-fit: cover;
-      background: #f1eaf3;
+      background: #e6eef2;
     }
 
     .body {

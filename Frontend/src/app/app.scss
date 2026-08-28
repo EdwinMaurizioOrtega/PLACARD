@@ -22,22 +22,10 @@
   text-decoration: none;
 }
 
-.brand-mark {
-  width: 34px;
-  height: 34px;
-  display: grid;
-  place-items: center;
-  border-radius: 11px;
-  background: linear-gradient(135deg, var(--brand), #ff8fb4);
-  color: #fff;
-  font-weight: 800;
-}
-
-.brand-text {
-  font-weight: 800;
-  letter-spacing: 0.12em;
-  color: var(--ink);
-  font-size: 0.95rem;
+.brand-logo {
+  height: 40px;
+  width: auto;
+  display: block;
 }
 
 .links {
@@ -94,6 +82,86 @@
   height: 34px;
 }
 
+.geo-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  background: #e6f7ef;
+  color: #0f7a53;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.geo-pill.off {
+  background: #fdeaea;
+  color: var(--danger);
+}
+
+.geo-fab {
+  position: fixed;
+  right: 1.2rem;
+  bottom: 1.2rem;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.15rem;
+  border: none;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--accent), var(--brand));
+  color: #fff;
+  font-family: inherit;
+  font-size: 0.88rem;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: var(--shadow-lg);
+  transition: transform 0.15s ease;
+}
+
+.geo-fab:hover:not(:disabled) {
+  transform: translateY(-2px);
+}
+
+.geo-fab:disabled {
+  opacity: 0.7;
+  cursor: progress;
+}
+
+.geo-fab .pin {
+  font-size: 1.05rem;
+}
+
+.geo-toast {
+  position: fixed;
+  right: 1.2rem;
+  bottom: 5rem;
+  z-index: 50;
+  max-width: 320px;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  padding: 0.8rem 1rem;
+  border-radius: 14px;
+  background: var(--ink);
+  color: #fff;
+  font-size: 0.82rem;
+  line-height: 1.4;
+  box-shadow: var(--shadow-lg);
+}
+
+.geo-toast button {
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+
 @media (max-width: 780px) {
   .topbar {
     flex-wrap: wrap;
@@ -111,6 +179,10 @@
   }
 
   .user-name {
+    display: none;
+  }
+
+  .geo-pill {
     display: none;
   }
 }

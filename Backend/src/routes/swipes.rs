@@ -4,7 +4,7 @@ use axum::{
     Json, Router,
 };
 use chrono::{DateTime, Utc};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, PgPool};
 use uuid::Uuid;
 
@@ -16,17 +16,32 @@ use crate::{
 };
 
 /// Consulta reutilizable de matches vista desde el usuario $1.
-pub const MATCH_SELECT: &str = "SELECT m.id, m.user_a, m.user_b, m.garment_a, m.garment_b, \
-        m.status, m.created_at, o.id AS other_user_id, o.username AS other_username, \
+pub const MATCH_SELECT: &str = "SELECT m.id, m.interested_id, m.owner_id, m.garment_id, \
+        m.intent, m.status, m.created_at, o.id AS other_user_id, o.username AS other_username, \
         o.full_name AS other_full_name, o.avatar_url AS other_avatar_url, \
-        o.rating_avg AS other_rating, lm.body AS last_message, \
+        o.rating_avg AS other_rating, g.title AS garment_title, g.mode AS garment_mode, \
+        g.price AS garment_price, gi.url AS garment_image, lm.body AS last_message, \
         lm.created_at AS last_message_at, COALESCE(un.total, 0) AS unread_count \
      FROM matches m \
-     JOIN users o ON o.id = CASE WHEN m.user_a = $1 THEN m.user_b ELSE m.user_a END \
+     JOIN users o ON o.id = CASE WHEN m.interested_id = $1 THEN m.owner_id ELSE m.interested_id END \
+     JOIN garments g ON g.id = m.garment_id \
+     LEFT JOIN LATERAL (SELECT url FROM garment_images \
+        WHERE garment_id = g.id ORDER BY position, created_at LIMIT 1) gi ON TRUE \
      LEFT JOIN LATERAL (SELECT body, created_at FROM messages \
         WHERE match_id = m.id ORDER BY created_at DESC LIMIT 1) lm ON TRUE \
      LEFT JOIN LATERAL (SELECT COUNT(*) AS total FROM messages \
         WHERE match_id = m.id AND sender_id <> $1 AND read_at IS NULL) un ON TRUE";
+
+#[derive(Debug, Deserialize)]
+struct SuperLikeInput {
+    garment_id: Uuid,
+}
+
+#[derive(Debug, Serialize)]
+struct SuperLikeResult {
+    active: bool,
+    super_likes: i32,
+}
 
 #[derive(Debug, Serialize, FromRow)]
 struct LikeReceived {
@@ -45,6 +60,7 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(list).post(create))
         .route("/likes-received", get(likes_received))
+        .route("/super", axum::routing::post(toggle_super))
         .route("/{id}", axum::routing::delete(remove))
 }
 
@@ -67,13 +83,95 @@ async fn likes_received(
          FROM swipes s \
          JOIN garments g ON g.id = s.garment_id \
          JOIN users u ON u.id = s.user_id \
-         WHERE g.owner_id = $1 AND s.direction IN ('like', 'super') \
+         WHERE g.owner_id = $1 AND s.direction = 'super' \
          ORDER BY s.created_at DESC",
     )
     .bind(auth.id)
     .fetch_all(&state.db)
     .await?;
     Ok(Json(items))
+}
+
+/// Valida que el usuario pueda interactuar con la prenda y devuelve (dueno, modalidad, titulo).
+async fn interactable(
+    state: &AppState,
+    viewer: Uuid,
+    garment_id: Uuid,
+) -> AppResult<(Uuid, String, String)> {
+    let owner: Option<(Uuid, String, String)> =
+        sqlx::query_as("SELECT owner_id, mode, title FROM garments WHERE id = $1")
+            .bind(garment_id)
+            .fetch_optional(&state.db)
+            .await?;
+    let (owner_id, mode, title) =
+        owner.ok_or_else(|| AppError::NotFound("Prenda no encontrada".into()))?;
+
+    if owner_id == viewer {
+        return Err(AppError::BadRequest(
+            "No puedes evaluar tus propias prendas".into(),
+        ));
+    }
+
+    let blocked: Option<(i64,)> = sqlx::query_as(
+        "SELECT 1::int8 FROM user_blocks \
+         WHERE (blocker_id = $1 AND blocked_id = $2) OR (blocker_id = $2 AND blocked_id = $1) \
+         LIMIT 1",
+    )
+    .bind(viewer)
+    .bind(owner_id)
+    .fetch_optional(&state.db)
+    .await?;
+
+    if blocked.is_some() {
+        return Err(AppError::Forbidden(
+            "No puedes interactuar con este usuario".into(),
+        ));
+    }
+
+    Ok((owner_id, mode, title))
+}
+
+/// Pone o quita el super like del usuario sobre un anuncio. No abre conversacion.
+async fn toggle_super(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Json(input): Json<SuperLikeInput>,
+) -> AppResult<Json<SuperLikeResult>> {
+    interactable(&state, auth.id, input.garment_id).await?;
+
+    let current: Option<(String,)> =
+        sqlx::query_as("SELECT direction FROM swipes WHERE user_id = $1 AND garment_id = $2")
+            .bind(auth.id)
+            .bind(input.garment_id)
+            .fetch_optional(&state.db)
+            .await?;
+
+    // Quitar el destacado deja el anuncio como descartado, sin perder el historial.
+    let active = !matches!(current.as_ref(), Some((dir,)) if dir == "super");
+    let direction = if active { "super" } else { "pass" };
+
+    sqlx::query(
+        "INSERT INTO swipes (user_id, garment_id, direction) VALUES ($1, $2, $3) \
+         ON CONFLICT (user_id, garment_id) \
+         DO UPDATE SET direction = EXCLUDED.direction, created_at = now(), \
+                       times_seen = swipes.times_seen + 1",
+    )
+    .bind(auth.id)
+    .bind(input.garment_id)
+    .bind(direction)
+    .execute(&state.db)
+    .await?;
+
+    let (super_likes,): (i32,) =
+        sqlx::query_as("SELECT super_likes_count FROM garments WHERE id = $1")
+            .bind(input.garment_id)
+            .fetch_one(&state.db)
+            .await?;
+
+    Ok(Json(SuperLikeResult {
+        active,
+        super_likes,
+    }))
 }
 
 async fn create(
@@ -87,40 +185,13 @@ async fn create(
         ));
     }
 
-    let owner: Option<(Uuid,)> = sqlx::query_as("SELECT owner_id FROM garments WHERE id = $1")
-        .bind(input.garment_id)
-        .fetch_optional(&state.db)
-        .await?;
-    let owner_id = owner
-        .ok_or_else(|| AppError::NotFound("Prenda no encontrada".into()))?
-        .0;
-
-    if owner_id == auth.id {
-        return Err(AppError::BadRequest(
-            "No puedes evaluar tus propias prendas".into(),
-        ));
-    }
-
-    let blocked: Option<(i64,)> = sqlx::query_as(
-        "SELECT 1::int8 FROM user_blocks \
-         WHERE (blocker_id = $1 AND blocked_id = $2) OR (blocker_id = $2 AND blocked_id = $1) \
-         LIMIT 1",
-    )
-    .bind(auth.id)
-    .bind(owner_id)
-    .fetch_optional(&state.db)
-    .await?;
-
-    if blocked.is_some() {
-        return Err(AppError::Forbidden(
-            "No puedes interactuar con este usuario".into(),
-        ));
-    }
+    let (owner_id, mode, title) = interactable(&state, auth.id, input.garment_id).await?;
 
     let swipe: Swipe = sqlx::query_as(
         "INSERT INTO swipes (user_id, garment_id, direction) VALUES ($1, $2, $3) \
          ON CONFLICT (user_id, garment_id) \
-         DO UPDATE SET direction = EXCLUDED.direction, created_at = now() RETURNING *",
+         DO UPDATE SET direction = EXCLUDED.direction, created_at = now(), \
+                       times_seen = swipes.times_seen + 1 RETURNING *",
     )
     .bind(auth.id)
     .bind(input.garment_id)
@@ -128,64 +199,90 @@ async fn create(
     .fetch_one(&state.db)
     .await?;
 
-    if input.direction == "pass" {
+    // Solo el 'me gusta' abre conversacion; 'pass' descarta y 'super' solo destaca.
+    if input.direction != "like" {
         return Ok(Json(SwipeResult {
             swipe,
             matched: false,
+            already: false,
             match_info: None,
         }));
     }
 
-    // Reciprocidad: el dueño ya dio like a alguna prenda mia.
-    let reciprocal: Option<(Uuid,)> = sqlx::query_as(
-        "SELECT s.garment_id FROM swipes s \
-         JOIN garments g ON g.id = s.garment_id \
-         WHERE s.user_id = $1 AND g.owner_id = $2 AND s.direction IN ('like', 'super') \
-         ORDER BY s.created_at DESC LIMIT 1",
-    )
-    .bind(owner_id)
-    .bind(auth.id)
-    .fetch_optional(&state.db)
-    .await?;
+    // Ya habia conversacion abierta sobre este anuncio: no se duplica.
+    let existing: Option<(Uuid,)> =
+        sqlx::query_as("SELECT id FROM matches WHERE interested_id = $1 AND garment_id = $2")
+            .bind(auth.id)
+            .bind(input.garment_id)
+            .fetch_optional(&state.db)
+            .await?;
 
-    let Some((my_garment,)) = reciprocal else {
+    if let Some((match_id,)) = existing {
+        let info = fetch_match(&state.db, auth.id, match_id).await?;
         return Ok(Json(SwipeResult {
             swipe,
             matched: false,
-            match_info: None,
+            already: true,
+            match_info: Some(info),
         }));
-    };
+    }
 
-    // user_a siempre es el UUID menor para respetar la unicidad del par.
-    let (user_a, user_b, garment_a, garment_b) = if auth.id < owner_id {
-        (auth.id, owner_id, my_garment, input.garment_id)
-    } else {
-        (owner_id, auth.id, input.garment_id, my_garment)
-    };
+    let intent = resolve_intent(&mode, input.intent.as_deref())?;
 
     let (match_id,): (Uuid,) = sqlx::query_as(
-        "INSERT INTO matches (user_a, user_b, garment_a, garment_b) VALUES ($1, $2, $3, $4) \
-         ON CONFLICT (user_a, user_b) DO UPDATE SET status = 'activo' RETURNING id",
+        "INSERT INTO matches (interested_id, owner_id, garment_id, intent) \
+         VALUES ($1, $2, $3, $4) RETURNING id",
     )
-    .bind(user_a)
-    .bind(user_b)
-    .bind(garment_a)
-    .bind(garment_b)
+    .bind(auth.id)
+    .bind(owner_id)
+    .bind(input.garment_id)
+    .bind(intent)
     .fetch_one(&state.db)
     .await?;
+
+    let opening = if intent == "venta" {
+        format!("¡Hola! Me interesa comprar tu prenda «{title}». ¿Sigue disponible?")
+    } else {
+        format!("¡Hola! Me interesa intercambiar tu prenda «{title}». ¿Te muestro mi clóset?")
+    };
+
+    sqlx::query("INSERT INTO messages (match_id, sender_id, body) VALUES ($1, $2, $3)")
+        .bind(match_id)
+        .bind(auth.id)
+        .bind(&opening)
+        .execute(&state.db)
+        .await?;
 
     let info = fetch_match(&state.db, auth.id, match_id).await?;
 
     Ok(Json(SwipeResult {
         swipe,
         matched: true,
+        already: false,
         match_info: Some(info),
     }))
 }
 
+/// La modalidad del anuncio manda; solo 'ambos' deja elegir al interesado.
+fn resolve_intent<'a>(mode: &'a str, requested: Option<&'a str>) -> AppResult<&'a str> {
+    match mode {
+        "venta" => Ok("venta"),
+        "intercambio" => Ok("intercambio"),
+        _ => match requested {
+            Some(value @ ("venta" | "intercambio")) => Ok(value),
+            Some(_) => Err(AppError::BadRequest(
+                "La intencion debe ser venta o intercambio".into(),
+            )),
+            None => Err(AppError::BadRequest(
+                "Esta prenda admite venta e intercambio: indica cual te interesa".into(),
+            )),
+        },
+    }
+}
+
 pub async fn fetch_match(db: &PgPool, viewer: Uuid, match_id: Uuid) -> AppResult<MatchRow> {
     sqlx::query_as(&format!(
-        "{MATCH_SELECT} WHERE m.id = $2 AND (m.user_a = $1 OR m.user_b = $1)"
+        "{MATCH_SELECT} WHERE m.id = $2 AND (m.interested_id = $1 OR m.owner_id = $1)"
     ))
     .bind(viewer)
     .bind(match_id)

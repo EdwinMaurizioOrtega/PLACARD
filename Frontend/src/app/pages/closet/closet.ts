@@ -92,7 +92,7 @@ import { Garment, STATUSES } from '../../core/models';
       width: 100%;
       height: 210px;
       object-fit: cover;
-      background: #f1eaf3;
+      background: #e6eef2;
     }
 
     .body {

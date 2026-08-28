@@ -134,3 +134,18 @@ pub async fn run(db: &PgPool) -> Result<(), sqlx::Error> {
     tracing::info!("Datos de demostracion cargados (password de todos los usuarios: placard123)");
     Ok(())
 }
+
+/// Genera actividad simulada repartida en 12 meses para que la reporteria del
+/// panel administrativo tenga volumen. Solo corre mientras la base este vacia.
+pub async fn demo(db: &PgPool) -> Result<(), sqlx::Error> {
+    let (swipes,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM swipes")
+        .fetch_one(db)
+        .await?;
+    if swipes >= 200 {
+        return Ok(());
+    }
+
+    sqlx::raw_sql(include_str!("demo.sql")).execute(db).await?;
+    tracing::info!("Actividad simulada generada para la reporteria del panel administrativo");
+    Ok(())
+}

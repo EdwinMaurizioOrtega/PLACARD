@@ -111,7 +111,10 @@ async fn update_user(
             avatar_url = COALESCE($5::text, avatar_url), \
             phone = COALESCE($6::text, phone), \
             city = COALESCE($7::text, city), \
-            neighborhood = COALESCE($8::text, neighborhood), \
+            neighborhood = COALESCE( \
+                NULLIF($8::text, ''), \
+                nearest_parish($9::float8, $10::float8), \
+                neighborhood), \
             latitude = COALESCE($9::float8, latitude), \
             longitude = COALESCE($10::float8, longitude), \
             preferred_sizes = COALESCE($11::text[], preferred_sizes), \

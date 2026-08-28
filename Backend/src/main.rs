@@ -45,6 +45,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     sqlx::migrate!("./migrations").run(&db).await?;
     seed::run(&db).await?;
+    seed::demo(&db).await?;
 
     let allowed_origins = std::env::var("CORS_ORIGINS")
         .unwrap_or_else(|_| "http://localhost:4200,http://127.0.0.1:4200".into());

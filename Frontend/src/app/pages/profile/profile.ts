@@ -134,7 +134,7 @@ import { BlockedUser } from '../../core/models';
             📍 Actualizar mi ubicación
           </button>
           <span class="muted">
-            Actual: {{ coords() }}
+            Actual: {{ coords() }} · se actualiza sola cada vez que inicias sesión
           </span>
         </div>
 

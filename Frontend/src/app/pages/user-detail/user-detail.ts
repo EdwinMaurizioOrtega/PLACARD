@@ -135,7 +135,7 @@ import { ReportDialog } from '../../shared/report-dialog';
       width: 100%;
       height: 200px;
       object-fit: cover;
-      background: #f1eaf3;
+      background: #e6eef2;
     }
 
     .body {

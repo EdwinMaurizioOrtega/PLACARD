@@ -63,6 +63,29 @@ export const routes: Routes = [
     path: 'admin',
     canActivate: [adminGuard],
     loadComponent: () => import('./pages/admin/admin').then((m) => m.AdminPage),
+    children: [
+      { path: '', pathMatch: 'full', redirectTo: 'resumen' },
+      {
+        path: 'resumen',
+        loadComponent: () => import('./pages/admin/overview').then((m) => m.AdminOverviewPage),
+      },
+      {
+        path: 'reporteria',
+        loadComponent: () => import('./pages/admin/analytics').then((m) => m.AdminAnalyticsPage),
+      },
+      {
+        path: 'moderacion',
+        loadComponent: () => import('./pages/admin/moderation').then((m) => m.AdminModerationPage),
+      },
+      {
+        path: 'catalogo',
+        loadComponent: () => import('./pages/admin/catalog').then((m) => m.AdminCatalogPage),
+      },
+      {
+        path: 'usuarios',
+        loadComponent: () => import('./pages/admin/users').then((m) => m.AdminUsersPage),
+      },
+    ],
   },
   { path: '**', redirectTo: 'descubrir' },
 ];

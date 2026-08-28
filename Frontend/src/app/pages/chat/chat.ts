@@ -24,7 +24,7 @@ import { MatchDetail, Message } from '../../core/models';
           <div class="row">
             @if (detail.status === 'activo') {
               <button class="btn btn-accent btn-sm" (click)="close('cerrado')">
-                Marcar intercambio realizado
+                {{ detail.intent === 'venta' ? 'Marcar venta realizada' : 'Marcar intercambio realizado' }}
               </button>
               <button class="btn btn-ghost btn-sm" (click)="close('cancelado')">Cancelar</button>
             } @else {
@@ -35,21 +35,24 @@ import { MatchDetail, Message } from '../../core/models';
         </div>
 
         <div class="garments card">
-          <h3>Prendas del match</h3>
-          <div class="row">
-            @for (garment of detail.garments; track garment.id) {
-              <div class="mini">
-                <img [src]="garment.images[0]?.url" [alt]="garment.title" />
-                <div>
-                  <strong>{{ garment.title }}</strong>
-                  <small class="muted">
-                    de &#64;{{ garment.owner_username }} ·
-                    {{ garment.price ? (garment.price | currency: 'USD') : 'Intercambio' }}
-                  </small>
-                </div>
-              </div>
-            }
+          <div class="row between">
+            <h3>Anuncio del match</h3>
+            <span class="chip chip-accent">{{ intentLabel(detail) }}</span>
           </div>
+          @if (detail.garment; as garment) {
+            <div class="mini">
+              <img [src]="garment.images[0]?.url" [alt]="garment.title" />
+              <div>
+                <strong>{{ garment.title }}</strong>
+                <small class="muted">
+                  de &#64;{{ garment.owner_username }} ·
+                  {{ garment.price ? (garment.price | currency: 'USD') : 'Intercambio' }}
+                </small>
+              </div>
+            </div>
+          } @else {
+            <p class="muted">El anuncio ya no está disponible.</p>
+          }
         </div>
 
         <div class="card chat">
@@ -143,7 +146,7 @@ import { MatchDetail, Message } from '../../core/models';
       height: 68px;
       object-fit: cover;
       border-radius: 10px;
-      background: #f1eaf3;
+      background: #e6eef2;
     }
 
     .mini small {
@@ -163,7 +166,7 @@ import { MatchDetail, Message } from '../../core/models';
       display: flex;
       flex-direction: column;
       gap: 0.6rem;
-      background: #fbf9fc;
+      background: #f6fafb;
     }
 
     .bubble {
@@ -176,7 +179,7 @@ import { MatchDetail, Message } from '../../core/models';
 
     .bubble.own {
       align-self: flex-end;
-      background: linear-gradient(135deg, var(--brand), #ff86ae);
+      background: linear-gradient(135deg, var(--accent), var(--brand));
       border-color: transparent;
       color: #fff;
       border-radius: 14px 14px 4px 14px;
@@ -258,6 +261,11 @@ export class ChatPage implements OnInit, OnDestroy {
   readonly myId = this.auth.user()?.id ?? '';
 
   private timer?: ReturnType<typeof setInterval>;
+
+  intentLabel(detail: MatchDetail): string {
+    const verb = detail.intent === 'venta' ? 'comprar' : 'intercambiar';
+    return detail.interested_id === this.myId ? `Quieres ${verb}` : `Quiere ${verb}`;
+  }
 
   ngOnInit() {
     this.api.getMatch(this.id()).subscribe((detail) => this.match.set(detail));

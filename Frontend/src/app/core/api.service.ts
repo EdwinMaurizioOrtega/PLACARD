@@ -4,6 +4,7 @@ import { Observable } from 'rxjs';
 
 import { environment } from '../../environments/environment';
 import {
+  AdminReport,
   AuthResponse,
   BlockedUser,
   Category,
@@ -12,11 +13,13 @@ import {
   LikeReceived,
   MatchDetail,
   MatchInfo,
+  MatchIntent,
   Message,
   Page,
   Report,
   Review,
   Stats,
+  SuperLikeResult,
   Swipe,
   SwipeResult,
   User,
@@ -133,15 +136,26 @@ export class ApiService {
   }
 
   // ---------- swipes ----------
-  swipe(garmentId: string, direction: 'like' | 'pass' | 'super'): Observable<SwipeResult> {
+  swipe(
+    garmentId: string,
+    direction: 'like' | 'pass' | 'super',
+    intent?: MatchIntent,
+  ): Observable<SwipeResult> {
     return this.http.post<SwipeResult>(`${API_URL}/swipes`, {
       garment_id: garmentId,
       direction,
+      intent: intent ?? null,
     });
   }
 
   mySwipes(): Observable<Swipe[]> {
     return this.http.get<Swipe[]>(`${API_URL}/swipes`);
+  }
+
+  toggleSuperLike(garmentId: string): Observable<SuperLikeResult> {
+    return this.http.post<SuperLikeResult>(`${API_URL}/swipes/super`, {
+      garment_id: garmentId,
+    });
   }
 
   likesReceived(): Observable<LikeReceived[]> {
@@ -238,5 +252,9 @@ export class ApiService {
   // ---------- estadisticas ----------
   stats(): Observable<Stats> {
     return this.http.get<Stats>(`${API_URL}/stats/overview`);
+  }
+
+  adminReport(): Observable<AdminReport> {
+    return this.http.get<AdminReport>(`${API_URL}/stats/report`);
   }
 }

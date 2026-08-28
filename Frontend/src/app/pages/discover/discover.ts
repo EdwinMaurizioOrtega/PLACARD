@@ -5,10 +5,12 @@ import { Router } from '@angular/router';
 
 import { ApiService } from '../../core/api.service';
 import { AuthService } from '../../core/auth.service';
-import { Category, Garment, MatchInfo } from '../../core/models';
+import { Category, Garment, MatchInfo, MatchIntent } from '../../core/models';
 import { ReportDialog } from '../../shared/report-dialog';
 
 const SWIPE_THRESHOLD = 110;
+
+type SwipeDirection = 'like' | 'pass';
 
 @Component({
   selector: 'app-discover',
@@ -37,17 +39,35 @@ const SWIPE_THRESHOLD = 110;
         </div>
       </div>
 
+      <div class="smart card">
+        <span class="brain">🧠</span>
+        <div>
+          <strong>Motor de recomendación inteligente</strong>
+          <p class="muted">
+            Tomamos tu ubicación al iniciar sesión y la cruzamos con la fórmula de Haversine para
+            medir la distancia real a cada prenda, luego puntuamos los anuncios según tus tallas y
+            estilos preferidos más tu historial de me gusta. La baraja se reordena sola en cada
+            carga y respeta tu radio máximo.
+          </p>
+        </div>
+      </div>
+
       @if (loading()) {
         <div class="spinner"></div>
       } @else if (!current()) {
         <div class="empty card">
           <span class="big">🧺</span>
-          <h3>No quedan prendas por revisar</h3>
-          <p>Cambia los filtros, amplía tu radio o vuelve más tarde: la comunidad publica a diario.</p>
+          <h3>No hay anuncios para mostrar</h3>
+          <p>Cambia los filtros o amplía tu radio: la comunidad publica a diario.</p>
           <button class="btn btn-primary" (click)="reload()">Recargar baraja</button>
         </div>
       } @else {
         <div class="deck">
+          @if (repeating()) {
+            <p class="hint muted repeat-note">
+              Ya viste todos los anuncios nuevos: la baraja vuelve a empezar.
+            </p>
+          }
           <div class="stack">
             @for (garment of visible(); track garment.id; let i = $index) {
               <article
@@ -96,6 +116,10 @@ const SWIPE_THRESHOLD = 110;
                         {{ garment.distance_km | number: '1.1-1' }} km
                       </span>
                     }
+                    <span class="chip chip-star">★ {{ garment.super_likes_count }}</span>
+                    @if (garment.times_seen > 0) {
+                      <span class="chip chip-warn">{{ seenLabel(garment) }}</span>
+                    }
                   </div>
                 </div>
 
@@ -133,9 +157,29 @@ const SWIPE_THRESHOLD = 110;
           </div>
 
           <div class="actions">
-            <button class="round pass" (click)="decide('pass')" title="Pasar (←)">✕</button>
-            <button class="round super" (click)="decide('super')" title="Super like (↑)">★</button>
-            <button class="round like" (click)="decide('like')" title="Me gusta (→)">♥</button>
+            <div class="action">
+              <button class="round pass" (click)="decide('pass')" title="Pasar (←)">✕</button>
+              <strong>Pasar</strong>
+              <small class="muted">Descarta el anuncio, nadie se entera</small>
+            </div>
+            <div class="action">
+              <button
+                class="round super"
+                [class.on]="superActive()"
+                (click)="toggleSuper()"
+                title="Super like (↑)"
+              >
+                <span class="icon">★</span>
+                <span class="count">{{ superCount() }}</span>
+              </button>
+              <strong>{{ superActive() ? 'Quitar super like' : 'Super like' }}</strong>
+              <small class="muted">Destaca el anuncio, no abre chat</small>
+            </div>
+            <div class="action">
+              <button class="round like" (click)="decide('like')" title="Me gusta (→)">♥</button>
+              <strong>Me gusta</strong>
+              <small class="muted">Abre el chat con el dueño</small>
+            </div>
           </div>
           <p class="hint muted">Arrastra la tarjeta o usa las flechas del teclado ← ↑ →</p>
         </div>
@@ -150,18 +194,49 @@ const SWIPE_THRESHOLD = 110;
         />
       }
 
-      @if (matched(); as info) {
-        <div class="modal-backdrop" (click)="matched.set(null)">
+      @if (intentPrompt(); as prompt) {
+        <div class="modal-backdrop" (click)="cancelIntent()">
           <div class="modal card" (click)="$event.stopPropagation()">
-            <span class="big">🎉</span>
-            <h2>¡Es un match!</h2>
+            <span class="big">🤝</span>
+            <h2>¿Qué te interesa?</h2>
             <p>
-              A ti y a <strong>{{ info.other_full_name }}</strong> les gustaron sus prendas.
-              Coordinen el intercambio por el chat.
+              <strong>{{ prompt.garment.title }}</strong> está disponible para venta o intercambio.
+              Le avisaremos a {{ prompt.garment.owner_full_name }} lo que elijas.
             </p>
             <div class="row center">
-              <button class="btn btn-ghost" (click)="matched.set(null)">Seguir deslizando</button>
-              <button class="btn btn-primary" (click)="goToChat(info)">Abrir chat</button>
+              <button class="btn btn-primary" (click)="confirmIntent('venta')">Comprar</button>
+              <button class="btn btn-accent" (click)="confirmIntent('intercambio')">
+                Intercambiar
+              </button>
+            </div>
+            <button class="btn btn-ghost btn-sm" (click)="cancelIntent()">Seguir deslizando</button>
+          </div>
+        </div>
+      }
+
+      @if (result(); as outcome) {
+        <div class="modal-backdrop" (click)="result.set(null)">
+          <div class="modal card" (click)="$event.stopPropagation()">
+            @if (outcome.already) {
+              <span class="big">💬</span>
+              <h2>Ya hay match</h2>
+              <p>
+                Ya existe una conversación con
+                <strong>{{ outcome.info.other_full_name }}</strong> sobre
+                <strong>{{ outcome.info.garment_title }}</strong>. Continúa ahí.
+              </p>
+            } @else {
+              <span class="big">🎉</span>
+              <h2>¡Es un match!</h2>
+              <p>
+                Le avisamos a <strong>{{ outcome.info.other_full_name }}</strong> que quieres
+                {{ outcome.info.intent === 'venta' ? 'comprar' : 'intercambiar' }}
+                <strong>{{ outcome.info.garment_title }}</strong>. Coordinen por el chat.
+              </p>
+            }
+            <div class="row center">
+              <button class="btn btn-ghost" (click)="result.set(null)">Seguir deslizando</button>
+              <button class="btn btn-primary" (click)="goToChat(outcome.info)">Abrir chat</button>
             </div>
           </div>
         </div>
@@ -176,6 +251,29 @@ const SWIPE_THRESHOLD = 110;
     .filters select {
       width: auto;
       min-width: 180px;
+    }
+
+    .smart {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.8rem;
+      margin-bottom: 1.1rem;
+      background: linear-gradient(135deg, rgba(52, 163, 125, 0.12), rgba(47, 127, 176, 0.12));
+    }
+
+    .brain {
+      font-size: 1.6rem;
+      line-height: 1;
+    }
+
+    .smart strong {
+      font-size: 0.92rem;
+    }
+
+    .smart p {
+      margin: 0.25rem 0 0;
+      font-size: 0.8rem;
+      line-height: 1.45;
     }
 
     .deck {
@@ -211,7 +309,7 @@ const SWIPE_THRESHOLD = 110;
     .photo {
       position: relative;
       height: 62%;
-      background: #f1eaf3;
+      background: #e6eef2;
     }
 
     .photo img {
@@ -232,6 +330,11 @@ const SWIPE_THRESHOLD = 110;
     .badges .chip {
       background: rgba(255, 255, 255, 0.92);
       color: var(--ink);
+    }
+
+    .badges .chip-star {
+      color: #b26a00;
+      font-weight: 700;
     }
 
     .dots {
@@ -354,6 +457,25 @@ const SWIPE_THRESHOLD = 110;
       display: flex;
       gap: 1.1rem;
       margin-top: 1.4rem;
+      align-items: flex-start;
+    }
+
+    .action {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.35rem;
+      width: 116px;
+      text-align: center;
+    }
+
+    .action strong {
+      font-size: 0.82rem;
+    }
+
+    .action small {
+      font-size: 0.72rem;
+      line-height: 1.3;
     }
 
     .round {
@@ -378,9 +500,27 @@ const SWIPE_THRESHOLD = 110;
 
     .round.super {
       color: #f5a524;
-      width: 52px;
-      height: 52px;
-      align-self: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      line-height: 1;
+      gap: 0.1rem;
+    }
+
+    .round.super .icon {
+      font-size: 1.35rem;
+    }
+
+    .round.super .count {
+      font-size: 0.72rem;
+      font-weight: 700;
+    }
+
+    .round.super.on {
+      background: #f5a524;
+      border-color: #f5a524;
+      color: #fff;
     }
 
     .round.like {
@@ -390,6 +530,11 @@ const SWIPE_THRESHOLD = 110;
     .hint {
       font-size: 0.82rem;
       margin-top: 0.9rem;
+    }
+
+    .repeat-note {
+      margin: 0 0 0.8rem;
+      text-align: center;
     }
 
     .modal-backdrop {
@@ -417,6 +562,10 @@ const SWIPE_THRESHOLD = 110;
       justify-content: center;
       margin-top: 1rem;
     }
+
+    .modal > .btn-sm {
+      margin-top: 0.7rem;
+    }
   `,
 })
 export class DiscoverPage implements OnInit {
@@ -427,8 +576,10 @@ export class DiscoverPage implements OnInit {
   readonly cards = signal<Garment[]>([]);
   readonly categories = signal<Category[]>([]);
   readonly loading = signal(true);
-  readonly matched = signal<MatchInfo | null>(null);
+  readonly result = signal<{ info: MatchInfo; already: boolean } | null>(null);
+  readonly intentPrompt = signal<{ garment: Garment; direction: SwipeDirection } | null>(null);
   readonly reporting = signal<Garment | null>(null);
+  readonly repeating = signal(false);
   readonly photoIndex = signal(0);
   readonly dragX = signal(0);
   readonly dragY = signal(0);
@@ -443,6 +594,8 @@ export class DiscoverPage implements OnInit {
   readonly visible = computed(() => this.cards().slice(0, 3));
   readonly likeOpacity = computed(() => Math.min(1, Math.max(0, this.dragX() / SWIPE_THRESHOLD)));
   readonly nopeOpacity = computed(() => Math.min(1, Math.max(0, -this.dragX() / SWIPE_THRESHOLD)));
+  readonly superActive = computed(() => this.current()?.i_super_liked ?? false);
+  readonly superCount = computed(() => this.current()?.super_likes_count ?? 0);
 
   ngOnInit() {
     this.api.listCategories().subscribe((cats) => this.categories.set(cats));
@@ -451,13 +604,40 @@ export class DiscoverPage implements OnInit {
 
   reload() {
     this.loading.set(true);
-    this.api.feed({ mode: this.mode, category_id: this.categoryId, limit: 30 }).subscribe({
+    this.repeating.set(false);
+    this.fetchDeck(false).subscribe({
       next: (items) => {
+        if (items.length === 0) {
+          this.restart();
+          return;
+        }
         this.cards.set(items);
         this.photoIndex.set(0);
         this.loading.set(false);
       },
       error: () => this.loading.set(false),
+    });
+  }
+
+  // Baraja infinita: al agotarse los anuncios nuevos se reparten los ya vistos.
+  private restart() {
+    this.fetchDeck(true).subscribe({
+      next: (items) => {
+        this.cards.set(items);
+        this.repeating.set(items.length > 0);
+        this.photoIndex.set(0);
+        this.loading.set(false);
+      },
+      error: () => this.loading.set(false),
+    });
+  }
+
+  private fetchDeck(repeat: boolean) {
+    return this.api.feed({
+      mode: this.mode,
+      category_id: this.categoryId,
+      limit: 30,
+      repeat,
     });
   }
 
@@ -494,7 +674,7 @@ export class DiscoverPage implements OnInit {
     this.dragging.set(false);
 
     if (dy < -SWIPE_THRESHOLD && Math.abs(dx) < SWIPE_THRESHOLD) {
-      this.decide('super');
+      this.toggleSuper();
     } else if (dx > SWIPE_THRESHOLD) {
       this.decide('like');
     } else if (dx < -SWIPE_THRESHOLD) {
@@ -506,25 +686,61 @@ export class DiscoverPage implements OnInit {
 
   @HostListener('window:keydown', ['$event'])
   onKey(event: KeyboardEvent) {
-    if (this.matched() || this.reporting() || !this.current()) return;
+    if (this.result() || this.intentPrompt() || this.reporting() || !this.current()) return;
     if (event.key === 'ArrowRight') this.decide('like');
     if (event.key === 'ArrowLeft') this.decide('pass');
-    if (event.key === 'ArrowUp') this.decide('super');
+    if (event.key === 'ArrowUp') this.toggleSuper();
   }
 
-  decide(direction: 'like' | 'pass' | 'super') {
+  // El super like solo destaca el anuncio: se puede poner y quitar, y no abre chat.
+  toggleSuper() {
     const garment = this.current();
     if (!garment) return;
 
-    this.api.swipe(garment.id, direction).subscribe({
-      next: (result) => {
-        if (result.matched && result.match_info) {
-          this.matched.set(result.match_info);
+    this.api.toggleSuperLike(garment.id).subscribe();
+    this.discard(garment);
+  }
+
+  decide(direction: SwipeDirection) {
+    const garment = this.current();
+    if (!garment) return;
+
+    // Las prendas 'ambos' necesitan que el interesado elija antes de avisar al dueño.
+    if (direction !== 'pass' && garment.mode === 'ambos') {
+      this.intentPrompt.set({ garment, direction });
+      this.resetDrag();
+      return;
+    }
+
+    this.send(garment, direction);
+  }
+
+  confirmIntent(intent: MatchIntent) {
+    const prompt = this.intentPrompt();
+    if (!prompt) return;
+    this.intentPrompt.set(null);
+    this.send(prompt.garment, prompt.direction, intent);
+  }
+
+  cancelIntent() {
+    this.intentPrompt.set(null);
+    this.resetDrag();
+  }
+
+  private send(garment: Garment, direction: SwipeDirection, intent?: MatchIntent) {
+    this.api.swipe(garment.id, direction, intent).subscribe({
+      next: (outcome) => {
+        if (outcome.match_info) {
+          this.result.set({ info: outcome.match_info, already: outcome.already });
         }
       },
     });
 
-    this.cards.update((cards) => cards.slice(1));
+    this.discard(garment);
+  }
+
+  private discard(garment: Garment) {
+    this.cards.update((cards) => cards.filter((card) => card.id !== garment.id));
     this.photoIndex.set(0);
     this.resetDrag();
 
@@ -534,12 +750,21 @@ export class DiscoverPage implements OnInit {
   }
 
   private topUp() {
-    this.api
-      .feed({ mode: this.mode, category_id: this.categoryId, limit: 30 })
-      .subscribe((items) => {
-        const known = new Set(this.cards().map((c) => c.id));
-        this.cards.update((cards) => [...cards, ...items.filter((i) => !known.has(i.id))]);
+    this.fetchDeck(this.repeating()).subscribe((items) => {
+      if (this.append(items) > 0 || this.repeating()) return;
+      this.fetchDeck(true).subscribe((repeated) => {
+        this.repeating.set(this.append(repeated) > 0);
       });
+    });
+  }
+
+  private append(items: Garment[]): number {
+    const known = new Set(this.cards().map((card) => card.id));
+    const fresh = items.filter((item) => !known.has(item.id));
+    if (fresh.length > 0) {
+      this.cards.update((cards) => [...cards, ...fresh]);
+    }
+    return fresh.length;
   }
 
   private resetDrag() {
@@ -548,7 +773,7 @@ export class DiscoverPage implements OnInit {
   }
 
   goToChat(info: MatchInfo) {
-    this.matched.set(null);
+    this.result.set(null);
     this.router.navigate(['/matches', info.id]);
   }
 
@@ -562,6 +787,10 @@ export class DiscoverPage implements OnInit {
 
   modeLabel(mode: string): string {
     return { venta: 'Venta', intercambio: 'Intercambio', ambos: 'Venta o intercambio' }[mode] ?? mode;
+  }
+
+  seenLabel(garment: Garment): string {
+    return garment.times_seen === 1 ? 'Visto 1 vez' : `Visto ${garment.times_seen} veces`;
   }
 
   conditionLabel(condition: string): string {

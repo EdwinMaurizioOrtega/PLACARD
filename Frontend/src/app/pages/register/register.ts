@@ -11,6 +11,7 @@ import { SIZES, STYLES } from '../../core/models';
   template: `
     <div class="wrap">
       <section class="card">
+        <img class="logo" src="logo-placard.png" alt="PLACARD S.A." />
         <h1>Crear cuenta</h1>
         <p class="subtitle">Únete a la comunidad de moda circular de Cuenca.</p>
 
@@ -84,12 +85,10 @@ import { SIZES, STYLES } from '../../core/models';
             </div>
           </div>
 
-          <div class="row">
-            <button type="button" class="btn btn-ghost" (click)="useLocation()">
-              📍 {{ located() ? 'Ubicación registrada' : 'Usar mi ubicación' }}
-            </button>
-            <span class="muted">Se usa para priorizar prendas cercanas.</span>
-          </div>
+          <p class="geo muted">
+            📍 Tu ubicación se toma al iniciar sesión, no aquí: así te mostramos prendas cercanas
+            donde quiera que estés.
+          </p>
 
           <button class="btn btn-primary btn-block" type="submit" [disabled]="loading()">
             {{ loading() ? 'Creando cuenta…' : 'Crear cuenta' }}
@@ -106,13 +105,20 @@ import { SIZES, STYLES } from '../../core/models';
       display: grid;
       place-items: center;
       padding: 2rem 1rem;
-      background: linear-gradient(135deg, #fff1f6 0%, #f6f2ff 55%, #e9fbf8 100%);
+      background: linear-gradient(135deg, #eaf6f1 0%, #eef4f8 55%, #e3eef5 100%);
     }
 
     .card {
       width: min(620px, 100%);
       padding: 2rem;
       box-shadow: var(--shadow-lg);
+    }
+
+    .logo {
+      display: block;
+      height: 64px;
+      width: auto;
+      margin: 0 auto 1rem;
     }
 
     .tags {
@@ -141,6 +147,12 @@ import { SIZES, STYLES } from '../../core/models';
       margin: 0.5rem 0 1rem;
     }
 
+    .geo {
+      font-size: 0.8rem;
+      margin: 0.5rem 0 1rem;
+      line-height: 1.45;
+    }
+
     .foot {
       text-align: center;
       font-size: 0.9rem;
@@ -156,7 +168,6 @@ export class RegisterPage {
   readonly styles = STYLES;
   readonly selectedSizes = signal<string[]>([]);
   readonly selectedStyles = signal<string[]>([]);
-  readonly located = signal(false);
   readonly loading = signal(false);
   readonly error = signal('');
 
@@ -167,24 +178,11 @@ export class RegisterPage {
     password: '',
     city: 'Cuenca',
     phone: '',
-    latitude: null as number | null,
-    longitude: null as number | null,
   };
 
   toggle(list: WritableSignal<string[]>, value: string) {
     list.update((current) =>
       current.includes(value) ? current.filter((v) => v !== value) : [...current, value],
-    );
-  }
-
-  useLocation() {
-    navigator.geolocation?.getCurrentPosition(
-      (pos) => {
-        this.form.latitude = pos.coords.latitude;
-        this.form.longitude = pos.coords.longitude;
-        this.located.set(true);
-      },
-      () => this.error.set('No se pudo obtener la ubicación del navegador'),
     );
   }
 
@@ -198,7 +196,7 @@ export class RegisterPage {
         preferred_styles: this.selectedStyles(),
       })
       .subscribe({
-        next: () => this.router.navigate(['/descubrir']),
+        next: () => this.auth.syncLocation().subscribe(() => this.router.navigate(['/descubrir'])),
         error: (err) => {
           this.error.set(err?.error?.error ?? 'No se pudo crear la cuenta');
           this.loading.set(false);

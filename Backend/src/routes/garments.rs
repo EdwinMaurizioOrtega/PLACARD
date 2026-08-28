@@ -62,7 +62,8 @@ pub async fn attach_images(db: &PgPool, rows: Vec<GarmentRow>) -> AppResult<Vec<
 
 async fn fetch_garment(db: &PgPool, id: Uuid) -> AppResult<Garment> {
     let row: GarmentRow = sqlx::query_as(&format!(
-        "SELECT {GARMENT_COLUMNS}, NULL::float8 AS distance_km {FROM_JOIN} WHERE g.id = $1"
+        "SELECT {GARMENT_COLUMNS}, NULL::float8 AS distance_km, 0 AS times_seen, \
+         false AS i_super_liked {FROM_JOIN} WHERE g.id = $1"
     ))
     .bind(id)
     .fetch_optional(db)
@@ -117,7 +118,8 @@ async fn list(
         .await?;
 
     let rows: Vec<GarmentRow> = sqlx::query_as(&format!(
-        "SELECT {GARMENT_COLUMNS}, NULL::float8 AS distance_km {FROM_JOIN} {filter} \
+        "SELECT {GARMENT_COLUMNS}, NULL::float8 AS distance_km, 0 AS times_seen, \
+         false AS i_super_liked {FROM_JOIN} {filter} \
          ORDER BY g.created_at DESC LIMIT $10 OFFSET $11"
     ))
     .bind(search.as_deref())
@@ -144,7 +146,8 @@ async fn list(
 
 async fn mine(State(state): State<AppState>, auth: AuthUser) -> AppResult<Json<Vec<Garment>>> {
     let rows: Vec<GarmentRow> = sqlx::query_as(&format!(
-        "SELECT {GARMENT_COLUMNS}, NULL::float8 AS distance_km {FROM_JOIN} \
+        "SELECT {GARMENT_COLUMNS}, NULL::float8 AS distance_km, 0 AS times_seen, \
+         false AS i_super_liked {FROM_JOIN} \
          WHERE g.owner_id = $1 ORDER BY g.created_at DESC"
     ))
     .bind(auth.id)
@@ -153,8 +156,9 @@ async fn mine(State(state): State<AppState>, auth: AuthUser) -> AppResult<Json<V
     Ok(Json(attach_images(&state.db, rows).await?))
 }
 
-/// Baraja de descubrimiento: prendas no evaluadas dentro del radio configurado,
-/// puntuadas por preferencias declaradas, historial de likes y cercania.
+/// Baraja de descubrimiento: prendas dentro del radio configurado, puntuadas por
+/// preferencias declaradas, historial de likes y cercania. Con `repeat` la baraja
+/// se vuelve infinita y reparte tambien los anuncios ya evaluados.
 async fn feed(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -182,6 +186,8 @@ async fn feed(
          ), \
          candidates AS ( \
             SELECT {GARMENT_COLUMNS}, \
+                COALESCE(sw.times_seen, 0) AS times_seen, \
+                COALESCE(sw.direction = 'super', false) AS i_super_liked, \
                 CASE WHEN me.latitude IS NOT NULL AND g.latitude IS NOT NULL THEN \
                     6371 * acos(LEAST(1, GREATEST(-1, \
                         cos(radians(me.latitude)) * cos(radians(g.latitude)) * \
@@ -197,11 +203,11 @@ async fn feed(
             LEFT JOIN categories c ON c.id = g.category_id \
             LEFT JOIN liked_categories lc ON lc.category_id = g.category_id \
             LEFT JOIN liked_styles ls ON ls.style = g.style \
+            LEFT JOIN swipes sw ON sw.user_id = $1 AND sw.garment_id = g.id \
             CROSS JOIN me \
             WHERE g.owner_id <> $1 AND g.status = 'disponible' \
               AND NOT g.is_hidden AND u.is_active \
-              AND NOT EXISTS (SELECT 1 FROM swipes s \
-                    WHERE s.user_id = $1 AND s.garment_id = g.id) \
+              AND ($5::bool OR sw.id IS NULL) \
               AND NOT EXISTS (SELECT 1 FROM user_blocks b \
                     WHERE (b.blocker_id = $1 AND b.blocked_id = g.owner_id) \
                        OR (b.blocker_id = g.owner_id AND b.blocked_id = $1)) \
@@ -210,7 +216,8 @@ async fn feed(
          ) \
          SELECT cd.* FROM candidates cd CROSS JOIN me \
          WHERE cd.distance_km IS NULL OR cd.distance_km <= me.max_distance_km \
-         ORDER BY cd.affinity DESC, cd.distance_km ASC NULLS LAST, cd.created_at DESC \
+         ORDER BY cd.times_seen ASC, cd.affinity DESC, cd.distance_km ASC NULLS LAST, \
+                  cd.created_at DESC \
          LIMIT $4"
     );
 
@@ -219,8 +226,18 @@ async fn feed(
         .bind(q.mode.as_deref())
         .bind(q.category_id)
         .bind(limit)
+        .bind(q.repeat.unwrap_or(false))
         .fetch_all(&state.db)
         .await?;
+
+    // Repartir una prenda en la baraja cuenta como impresion: alimenta el embudo del panel.
+    if !rows.is_empty() {
+        let shown: Vec<Uuid> = rows.iter().map(|r| r.id).collect();
+        sqlx::query("UPDATE garments SET views = views + 1 WHERE id = ANY($1)")
+            .bind(&shown)
+            .execute(&state.db)
+            .await?;
+    }
 
     Ok(Json(attach_images(&state.db, rows).await?))
 }
